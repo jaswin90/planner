@@ -56,8 +56,8 @@ Open the site and click **Sign in with Google**. That's it. On your other device
 account and everything shows up.
 
 Try it without Google: "Use on this device only" keeps everything (encrypted) in that browser only, which is
-handy on a work laptop where Google Drive is blocked. Use Settings → Export backup now and then, because clearing
-browser data (or a VDI profile reset) erases it.
+handy on a work laptop where Google Drive is blocked. Use Settings → Export backup (password-protected) now and
+then, because clearing browser data (or a VDI profile reset) erases it. Import it on any device.
 
 ---
 
@@ -80,7 +80,7 @@ What this does **not** protect against (the trade-off for having no passphrase):
   account, could in principle read your data. If you need protection even from that, it needs a passphrase.
 - On a device where you've used the app, the browser keeps a copy so it opens offline. Click **Sign out** on
   shared computers, and use Settings → **Forget this device** to remove that copy.
-- "Export backup" (Settings) writes an **unencrypted** file. Store it carefully.
+- "Export backup" (Settings) is password-protected unless you choose "No password".
 
 See [DESIGN.md](DESIGN.md) for how it works inside.
 
@@ -89,5 +89,7 @@ See [DESIGN.md](DESIGN.md) for how it works inside.
 ```bash
 python3 -m http.server 8080      # then open http://localhost:8080
 node --test tests/*.test.mjs     # crypto + merge unit tests
-node tests/e2e.mjs               # full browser test (needs Playwright + Chromium)
+node tests/e2e.mjs               # full browser test, on-device mode (needs Playwright + Chromium)
+node tests/google.e2e.mjs        # Google sign-in + Drive sync against a fake Google, two devices
+node tests/sync.e2e.mjs          # sync engine merge between two devices
 ```

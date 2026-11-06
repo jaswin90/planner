@@ -36,3 +36,10 @@ test('fresh IV every time', async () => {
 test('bad key is refused', async () => {
   await assert.rejects(C.importKey(C.b64(new Uint8Array(5))), /Bad key/);
 });
+
+test('password-protected backup round trip', async () => {
+  const box = await C.encryptWithPassword('{"hello":"backup"}', 'my backup pw', 1000);
+  assert.ok(!JSON.stringify(box).includes('hello'));
+  assert.equal(await C.decryptWithPassword(box, 'my backup pw'), '{"hello":"backup"}');
+  await assert.rejects(C.decryptWithPassword(box, 'wrong'), /Wrong backup password/);
+});

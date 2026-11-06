@@ -73,3 +73,28 @@ export async function encryptJson(key, obj, label) {
 export async function decryptJson(key, blob, label) {
   return JSON.parse(dec.decode(await decryptBytes(key, blob, label)));
 }
+
+// ---- password-protected backup files (PBKDF2-SHA256 600k -> AES-GCM) ----
+export const BACKUP_ITERATIONS = 600000;
+
+async function passwordKey(password, salt, iterations) {
+  const base = await subtle.importKey('raw', enc.encode(password.normalize('NFKC')), 'PBKDF2', false, ['deriveKey']);
+  return subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+
+/** Encrypt a string with a password. Returns a JSON-able object. */
+export async function encryptWithPassword(text, password, iterations = BACKUP_ITERATIONS) {
+  const salt = randomBytes(16);
+  const key = await passwordKey(password, salt, iterations);
+  const blob = await encryptBytes(key, enc.encode(text), 'backup');
+  return { kdf: 'PBKDF2-SHA256', iterations, salt: b64(salt), data: b64(blob) };
+}
+
+export async function decryptWithPassword(box, password) {
+  const key = await passwordKey(password, unb64(box.salt), box.iterations);
+  try {
+    return dec.decode(await decryptBytes(key, unb64(box.data), 'backup'));
+  } catch {
+    throw new Error('Wrong backup password (or the file is damaged).');
+  }
+}

@@ -1,9 +1,9 @@
 // Settings (opened from the gear icon): notebooks/projects, account,
 // backup, and deleting data.
 
-import { h, icon, clear, toast, confirmDialog, promptDialog, pickFiles } from './ui.js';
+import { h, icon, clear, toast, modal, confirmDialog, promptDialog, pickFiles } from './ui.js';
 import { liveItems } from './model.js';
-import { b64, unb64 } from './crypto.js';
+import { b64, unb64, encryptWithPassword, decryptWithPassword } from './crypto.js';
 
 const COLORS = ['#e8a33d', '#d9534f', '#5b9bd5', '#4caf7d', '#9b6fd1', '#e06fa8', '#3fb5b0', '#8a8f98'];
 
@@ -40,7 +40,7 @@ export function renderSettings(root, vault, { onSignOut }) {
         h('button', { class: 'btn', onclick: onSignOut }, 'Sign out'))),
 
     card('Backup',
-      h('p', { class: 'muted small' }, 'Download a copy of everything (tasks, notes and files). The backup file is NOT encrypted, so keep it somewhere safe.'),
+      h('p', { class: 'muted small' }, 'Download a copy of everything (tasks, notes, photos and files), protected with a password you choose. Do this regularly if you use "this device only" mode.'),
       h('div', { class: 'row wrap' },
         h('button', { class: 'btn', onclick: () => exportAll(vault) }, icon('download'), 'Export backup'),
         h('button', { class: 'btn', onclick: () => importAll(vault, rerender) }, 'Import backup'))),
@@ -58,8 +58,34 @@ export function renderSettings(root, vault, { onSignOut }) {
   ));
 }
 
+function backupPassword() {
+  return new Promise((resolve) => {
+    let done = false;
+    const a = h('input', { type: 'password', autocomplete: 'new-password', placeholder: 'Backup password' });
+    const b = h('input', { type: 'password', autocomplete: 'new-password', placeholder: 'Type it again' });
+    const err = h('p', { class: 'error' });
+    const finish = (v) => { done = true; resolve(v); m.close(); };
+    const m = modal('Export backup', h('form', { class: 'stack', onsubmit: (e) => {
+      e.preventDefault();
+      if (a.value.length < 8) { err.textContent = 'Use at least 8 characters.'; return; }
+      if (a.value !== b.value) { err.textContent = 'The two passwords are different.'; return; }
+      finish(a.value);
+    } },
+      h('p', {}, 'Protect the backup with a password, so it is safe on a USB stick or a shared drive. You will need this password to import it.'),
+      a, b, err,
+      h('div', { class: 'row wrap end' },
+        h('button', { type: 'button', class: 'btn', onclick: async () => {
+          if (await confirmDialog('Without a password, anyone who gets the file can read all your notes. Export anyway?', { ok: 'Export unprotected', danger: true })) finish('');
+        } }, 'No password'),
+        h('button', { class: 'btn primary' }, 'Export protected'))), { onClose: () => { if (!done) resolve(null); } });
+    a.focus();
+  });
+}
+
 async function exportAll(vault) {
-  if (!await confirmDialog('The backup file will be readable by anyone who gets it. Continue?', { ok: 'Export' })) return;
+  const password = await backupPassword();
+  if (password === null) return;
+  toast('Preparing backup…');
   const files = {};
   for (const a of liveItems(vault.doc, 'att')) {
     try {
@@ -67,7 +93,8 @@ async function exportAll(vault) {
       files[a.id] = b64(new Uint8Array(await (await fetch(url)).arrayBuffer()));
     } catch { /* not available on this device yet */ }
   }
-  const out = JSON.stringify({ app: 'planner', exportedAt: new Date().toISOString(), doc: vault.doc, files });
+  let out = JSON.stringify({ app: 'planner', exportedAt: new Date().toISOString(), doc: vault.doc, files });
+  if (password) out = JSON.stringify({ app: 'planner', protected: true, exportedAt: new Date().toISOString(), box: await encryptWithPassword(out, password) });
   const url = URL.createObjectURL(new Blob([out], { type: 'application/json' }));
   const a = h('a', { href: url, download: `planner-backup-${new Date().toISOString().slice(0, 10)}.json` });
   document.body.append(a); a.click(); a.remove();
@@ -78,7 +105,14 @@ async function importAll(vault, after) {
   const [file] = await pickFiles({ accept: 'application/json,.json', multiple: false });
   if (!file) return;
   try {
-    const data = JSON.parse(await file.text());
+    let data = JSON.parse(await file.text());
+    if (data.app === 'planner' && data.protected) {
+      const box = data.box || {};
+      if (!(box.iterations >= 100000 && box.iterations <= 5000000)) throw new Error('Not a planner backup file.');
+      const pw = await promptDialog('Import backup', { label: 'Backup password', type: 'password' });
+      if (!pw) return;
+      data = JSON.parse(await decryptWithPassword(box, pw));
+    }
     if (data.app !== 'planner' || !data.doc?.items) throw new Error('Not a planner backup file.');
     let n = 0;
     for (const it of Object.values(data.doc.items).sort((a, b) => (a?.type === 'att' ? 0 : 1) - (b?.type === 'att' ? 0 : 1))) {

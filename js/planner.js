@@ -7,7 +7,8 @@ import { SECTIONS, sectionOf, liveItems, monthGrid, isoDate, htmlToText } from '
 import { createEditor, attachmentList } from './editor.js';
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const state = { y: new Date().getFullYear(), m: new Date().getMonth(), day: isoDate(new Date()), mode: 'month', project: '', collapsed: new Set(['done']) };
+const phone = typeof window !== 'undefined' && window.matchMedia?.('(max-width: 760px)').matches;
+const state = { y: new Date().getFullYear(), m: new Date().getMonth(), day: isoDate(new Date()), mode: phone ? 'day' : 'month', project: '', collapsed: new Set(phone ? ['done', 'backlog'] : ['done']) };
 
 export function renderPlanner(root, vault) {
   clear(root);

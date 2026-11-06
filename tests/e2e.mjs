@@ -145,6 +145,31 @@ try {
   await page.getByRole('link', { name: 'Settings' }).click();
   await page.getByText('Projects & notebooks').waitFor();
 
+  // Password-protected backup: export here, import on a fresh "device"
+  await page.getByRole('button', { name: 'Export backup' }).click();
+  await page.getByPlaceholder('Backup password').fill('usb-stick-pw');
+  await page.getByPlaceholder('Type it again').fill('usb-stick-pw');
+  const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.getByRole('button', { name: 'Export protected' }).click()]);
+  const backupPath = join(tmp, 'backup.json');
+  await dl.saveAs(backupPath);
+  const backupText = (await import('node:fs')).readFileSync(backupPath, 'utf8');
+  assert.ok(backupText.includes('"protected":true') && !backupText.includes('Trip ideas') && !backupText.includes(SECRET), 'backup is encrypted');
+  const ctx2 = await browser.newContext({ viewport: { width: 1360, height: 860 } });
+  const p2 = await ctx2.newPage();
+  p2.on('pageerror', (e) => errors.push(String(e)));
+  await p2.goto(`http://127.0.0.1:${PORT}/#/settings`);
+  await p2.getByRole('button', { name: 'Use on this device only' }).click();
+  const [fc3] = await Promise.all([p2.waitForEvent('filechooser'), p2.getByRole('button', { name: 'Import backup' }).click()]);
+  await fc3.setFiles(backupPath);
+  await p2.locator('dialog input[type=password]').fill('usb-stick-pw');
+  await p2.locator('dialog').getByRole('button', { name: 'OK' }).click();
+  await p2.getByText(/Imported \d+ items/).waitFor({ timeout: 30000 });
+  await p2.locator('nav.tabs a', { hasText: 'Notes' }).click();
+  await p2.locator('.nl-item', { hasText: 'Trip ideas' }).click();
+  await p2.locator('.note-pane .rte', { hasText: SECRET }).waitFor();
+  await p2.locator('.note-pane .rte img[src^="blob:"]').waitFor();
+  await ctx2.close();
+
   // Phone layout renders
   await page.setViewportSize({ width: 390, height: 800 });
   await page.locator('nav.tabs a', { hasText: 'Planner' }).click();

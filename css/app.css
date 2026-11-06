@@ -217,13 +217,19 @@ img.preview { max-width: 100%; max-height: 65vh; object-fit: contain; border-rad
 
 /* phones */
 @media (max-width: 760px) {
-  .bname { display: none; }
+  .top .brand { display: none; }
   .tabs { margin-left: 0; }
-  .tabs a span { display: none; }
   .tabs a { padding: 7px 10px; }
+  .status span { display: none; }
+  .status.st-auth span, .status.st-error span { display: inline; }
+  .status { padding: 6px 8px; }
   .planner { grid-template-columns: 1fr; height: auto; }
   .side { border-right: 0; border-bottom: 1px solid var(--line); max-height: none; }
+  .side { gap: 4px; padding: 10px 12px; }
   .stickies { flex-direction: row; overflow-x: auto; padding-bottom: 4px; }
+  .empty-drop { display: none; }
+  .sec { padding: 0 4px; }
+  .sec-head { padding: 4px; }
   .sticky { min-width: 170px; max-width: 220px; }
   .cal { grid-auto-rows: minmax(64px, auto); }
   .chip .time { display: none; }

@@ -5,7 +5,7 @@
   "description": "Encrypted notes + planner. Static site, no build step, no dependencies.",
   "scripts": {
     "test": "node --test tests/*.test.mjs",
-    "e2e": "node tests/e2e.mjs && node tests/sync.e2e.mjs",
+    "e2e": "node tests/e2e.mjs && node tests/sync.e2e.mjs && node tests/google.e2e.mjs",
     "serve": "python3 -m http.server 8080"
   }
 }

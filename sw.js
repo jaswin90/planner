@@ -1,8 +1,8 @@
 // Offline support: caches only this site's own files (the app shell).
 // Never caches Google API traffic or any user data.
-const VERSION = 'planner-v2';
+const VERSION = 'planner-v3';
 const SHELL = [
-  './', 'index.html', 'css/app.css', 'icon.svg', 'manifest.webmanifest',
+  './', 'index.html', 'css/app.css', 'icon.svg', 'icon-192.png', 'apple-touch-icon.png', 'manifest.webmanifest',
   'js/app.js', 'js/config.js', 'js/crypto.js', 'js/editor.js', 'js/google.js', 'js/idb.js',
   'js/model.js', 'js/notes.js', 'js/planner.js', 'js/sanitize.js', 'js/settings.js',
   'js/ui.js', 'js/vault.js',
