@@ -1,0 +1,7 @@
+node_modules/
+_site/
+*.log
+.DS_Store
+# Never commit backups or recovery codes
+planner-backup-*.json
+planner-recovery-code*.txt
