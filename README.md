@@ -21,10 +21,10 @@ No server, no database, no build step, no dependencies.
 ## What you need to do (one-time setup, ~10 minutes)
 
 ### 1. Turn on GitHub Pages
-1. Merge this branch into `main` (or push it there).
-2. On GitHub, go to **Settings → Pages → Build and deployment → Source** and choose **GitHub Actions**.
-3. The workflow `.github/workflows/pages.yml` runs the tests and publishes the site. It ends up at
-   `https://jaswin90.github.io/planner/`.
+1. On GitHub, go to **Settings → Pages → Build and deployment → Source** and choose **GitHub Actions**.
+2. Go to **Actions → "Test and deploy to GitHub Pages" → Run workflow** (or just push a commit).
+   It runs the tests and publishes the site at `https://jaswin90.github.io/planner/`.
+   Pushes to the default branch (or `main`) redeploy automatically.
 
 > On a free GitHub plan, Pages only works for **public** repositories. That's safe here: the code holds no
 > secrets and your data never goes into the repo. To keep the repo private you need GitHub Pro.
