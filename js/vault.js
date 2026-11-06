@@ -1,17 +1,17 @@
-// The vault: owns the decryption key, the decrypted document, the local
-// encrypted cache (IndexedDB) and sync with Google Drive.
+// The vault: owns the key, the decrypted document, the local encrypted
+// cache (IndexedDB) and sync with Google Drive.
 //
 // Storage layout (both local cache and Drive app folder):
-//   vault-meta.json   salt + wrapped key (no secrets in the clear)
+//   planner-key.json  the account's random AES key (created on first sign-in)
 //   planner-data.bin  AES-GCM(document JSON), AAD "doc"
 //   att-<id>.bin      AES-GCM(file bytes),    AAD "att:<id>"
-// Nothing readable ever leaves the browser.
+// Your Google account protects the key; files at rest are ciphertext.
 
 import * as C from './crypto.js';
 import { idb } from './idb.js';
 import { emptyDoc, mergeDocs, newId } from './model.js';
 
-const META = 'vault-meta.json';
+const KEY = 'planner-key.json';
 const DOC = 'planner-data.bin';
 const attName = (id) => `att-${id}.bin`;
 
@@ -48,44 +48,38 @@ export class Vault extends EventTarget {
 
   get online() { return !!this.remote && navigator.onLine; }
 
-  /** Find vault metadata. Drive copy wins (passphrase may have changed elsewhere). */
-  async loadMeta() {
-    let meta = await idb.get(this.p + META);
+  /**
+   * Get the account key (Drive copy wins, so every device uses the same one),
+   * creating it on first use, then load the local cached document.
+   */
+  async open() {
+    let keyB64 = await idb.get(this.p + KEY);
     if (this.remote) {
-      const r = await this.remote.get(META);
+      const r = await this.remote.get(KEY);
       if (r) {
-        meta = JSON.parse(new TextDecoder().decode(r.bytes));
-        await idb.set(this.p + META, meta);
+        const remoteKey = JSON.parse(new TextDecoder().decode(r.bytes)).k;
+        if (remoteKey !== keyB64) await idb.del(this.p + DOC); // cache made with another key
+        keyB64 = remoteKey;
+      } else if (!keyB64) {
+        keyB64 = C.newKeyB64();
+        await this.remote.put(KEY, new TextEncoder().encode(JSON.stringify({ v: 2, k: keyB64 })), 'application/json');
+      } else {
+        // Drive was emptied: re-upload this device's key so its data can sync back.
+        await this.remote.put(KEY, new TextEncoder().encode(JSON.stringify({ v: 2, k: keyB64 })), 'application/json');
       }
+    } else if (!keyB64) {
+      if (this.account.mode === 'google') throw new Error('Nothing saved on this device yet. Sign in with Google while online first.');
+      keyB64 = C.newKeyB64();
     }
-    this.meta = meta || null;
-    return this.meta;
-  }
-
-  async create(passphrase) {
-    const { meta, dek, recoveryCode } = await C.createVault(passphrase);
-    await this.saveMeta(meta);
-    this.dek = dek;
-    this.doc = emptyDoc();
-    await this.saveLocal();
-    return recoveryCode;
-  }
-
-  async saveMeta(meta) {
-    this.meta = meta;
-    await idb.set(this.p + META, meta);
-    if (this.remote) await this.remote.put(META, new TextEncoder().encode(JSON.stringify(meta)), 'application/json');
-  }
-
-  async unlock(secret, { recovery = false } = {}) {
-    this.dek = await C.unlockVault(this.meta, secret, { recovery });
+    await idb.set(this.p + KEY, keyB64);
+    this.dek = await C.importKey(keyB64);
     const local = await idb.get(this.p + DOC);
-    this.doc = local ? await C.decryptJson(this.dek, local, 'doc') : emptyDoc();
+    try { this.doc = local ? await C.decryptJson(this.dek, local, 'doc') : emptyDoc(); } catch { this.doc = emptyDoc(); }
   }
 
-  async changePassphrase(oldSecret, next, opts) {
-    const meta = await C.changePassphrase(this.meta, oldSecret, next, opts);
-    await this.saveMeta(meta);
+  /** Does this browser hold a copy for this account? */
+  async hasLocalCopy() {
+    return !!(await idb.get(this.p + KEY));
   }
 
   /** Forget the key and every decrypted byte held by this object. */

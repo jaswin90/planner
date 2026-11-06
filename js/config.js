@@ -5,8 +5,6 @@
 // Paste your client ID below (see README.md, "Set up Google sign-in").
 export const CONFIG = {
   googleClientId: '',
-  // Lock the vault after this many minutes with no keyboard/mouse activity.
-  autoLockMinutes: 15,
   // Largest single attachment, in megabytes.
   maxAttachmentMB: 20,
 };

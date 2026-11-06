@@ -35,7 +35,7 @@ function loadGis() {
 }
 
 /** Ask Google for an access token. `interactive` = allow showing the consent popup. */
-export async function getToken({ interactive = true, hint } = {}) {
+export async function getToken({ interactive = true, hint, chooseAccount = false } = {}) {
   if (token && token.expiresAt - Date.now() > 60_000) return token.access_token;
   if (pending) return pending;
   await loadGis();
@@ -54,7 +54,7 @@ export async function getToken({ interactive = true, hint } = {}) {
       },
       error_callback: (err) => reject(new Error(err?.type === 'popup_closed' ? 'Sign-in window was closed.' : (err?.message || 'Sign-in failed.'))),
     });
-    tokenClient.requestAccessToken({ prompt: interactive ? '' : 'none' });
+    tokenClient.requestAccessToken({ prompt: chooseAccount ? 'select_account' : interactive ? '' : 'none' });
   }).finally(() => { pending = null; });
   return pending;
 }

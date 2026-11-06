@@ -1,16 +1,15 @@
-// Settings (opened from the gear icon): notebooks/projects, security,
+// Settings (opened from the gear icon): notebooks/projects, account,
 // backup, and deleting data.
 
 import { h, icon, clear, toast, confirmDialog, promptDialog, pickFiles } from './ui.js';
 import { liveItems } from './model.js';
-import { replaceRecoveryCode, b64, unb64 } from './crypto.js';
-import { getPref, setPref } from './prefs.js';
+import { b64, unb64 } from './crypto.js';
 
 const COLORS = ['#e8a33d', '#d9534f', '#5b9bd5', '#4caf7d', '#9b6fd1', '#e06fa8', '#3fb5b0', '#8a8f98'];
 
-export function renderSettings(root, vault, { onSignOut, showRecovery }) {
+export function renderSettings(root, vault, { onSignOut }) {
   clear(root);
-  const rerender = () => renderSettings(root, vault, { onSignOut, showRecovery });
+  const rerender = () => renderSettings(root, vault, { onSignOut });
   const projects = liveItems(vault.doc, 'project').sort((a, b) => a.name.localeCompare(b.name));
   const acct = vault.account;
 
@@ -40,23 +39,6 @@ export function renderSettings(root, vault, { onSignOut, showRecovery }) {
         acct.mode === 'google' && h('button', { class: 'btn', onclick: () => vault.sync() }, icon('sync'), 'Sync now'),
         h('button', { class: 'btn', onclick: onSignOut }, 'Sign out'))),
 
-    card('Security',
-      h('p', { class: 'muted small' }, 'Your passphrase never leaves this device. Without it (or the recovery code) nobody, including Google and the app author, can read your data.'),
-      h('label', { class: 'field inline' }, h('span', {}, 'Lock automatically after'),
-        h('select', { onchange: (e) => { setPref('autoLockMinutes', Number(e.target.value)); toast('Saved'); } },
-          [5, 15, 30, 60, 240].map((m) => h('option', { value: m, selected: getPref('autoLockMinutes') === m }, `${m} minutes idle`)))),
-      h('div', { class: 'row wrap' },
-        h('button', { class: 'btn', onclick: () => changePass(vault) }, 'Change passphrase'),
-        h('button', { class: 'btn', onclick: async () => {
-          const pass = await promptDialog('New recovery code', { label: 'Enter your passphrase', type: 'password' });
-          if (!pass) return;
-          try {
-            const { meta, recoveryCode } = await replaceRecoveryCode(vault.meta, pass);
-            await vault.saveMeta(meta);
-            showRecovery(recoveryCode);
-          } catch (e) { toast(e.message, 'error'); }
-        } }, 'Make a new recovery code'))),
-
     card('Backup',
       h('p', { class: 'muted small' }, 'Download a copy of everything (tasks, notes and files). The backup file is NOT encrypted, so keep it somewhere safe.'),
       h('div', { class: 'row wrap' },
@@ -74,16 +56,6 @@ export function renderSettings(root, vault, { onSignOut, showRecovery }) {
           try { await vault.destroyAll(); location.reload(); } catch (e) { toast(e.message, 'error'); }
         } }, icon('trash'), 'Delete all my data'))),
   ));
-}
-
-async function changePass(vault) {
-  const old = await promptDialog('Change passphrase', { label: 'Current passphrase', type: 'password' });
-  if (!old) return;
-  const next = await promptDialog('Change passphrase', { label: 'New passphrase (at least 10 characters)', type: 'password' });
-  if (!next) return;
-  const again = await promptDialog('Change passphrase', { label: 'Type the new passphrase again', type: 'password' });
-  if (next !== again) return toast('The passphrases do not match.', 'error');
-  try { await vault.changePassphrase(old, next); toast('Passphrase changed on all devices.', 'ok'); } catch (e) { toast(e.message, 'error'); }
 }
 
 async function exportAll(vault) {

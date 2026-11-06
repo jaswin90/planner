@@ -15,7 +15,7 @@ Browser ──(AES-GCM ciphertext only)──> Google Drive appDataFolder   (syn
 
 | File | Role |
 |---|---|
-| `js/crypto.js` | Key derivation, wrapping, encrypt/decrypt (WebCrypto) |
+| `js/crypto.js` | Key creation, encrypt/decrypt (WebCrypto) |
 | `js/vault.js` | Decrypted document in memory, local cache, Drive sync, attachments |
 | `js/model.js` | Data model, per-item merge, calendar maths (no DOM; unit tested) |
 | `js/google.js` | Google Identity Services token client + Drive REST |
@@ -23,20 +23,18 @@ Browser ──(AES-GCM ciphertext only)──> Google Drive appDataFolder   (syn
 | `js/editor.js` | Rich-text editor, photos, file chips, PDF viewer |
 | `js/planner.js` | Sidebar of stickies, Day view, Month view, task dialog |
 | `js/notes.js` | Note list, search, note editor |
-| `js/settings.js` | Projects/notebooks, passphrase, recovery code, backup, delete |
-| `js/app.js` | Sign-in, create/unlock screens, header, routing, auto-lock |
+| `js/settings.js` | Projects/notebooks, account, backup, delete |
+| `js/app.js` | Google sign-in, header, routing |
 | `sw.js` | Offline cache of the app's own files (never user data) |
 
 ## Encryption
-- Random 256-bit **data key (DEK)**. Every file is `AES-256-GCM(DEK)` with a fresh 96-bit IV.
-  Associated data = file purpose (`doc`, `att:<id>`), so ciphertexts can't be swapped.
-- The DEK is stored only **wrapped**:
-  - by `PBKDF2-SHA256(passphrase, salt, 600k)` → KEK
-  - by `PBKDF2-SHA256(recovery code, rsalt, 600k)` → RKEK (160-bit random code)
-- `vault-meta.json` (salts + wrapped keys) is not secret. The Drive copy is authoritative, so a passphrase
-  changed on one device works everywhere.
-- After unlock the DEK is a non-extractable `CryptoKey`. Lock drops it along with all decrypted data and
-  object URLs.
+- One random 256-bit **account key** is created on first sign-in and stored as `planner-key.json` in the
+  account's Drive app folder (and cached in IndexedDB on each device). No passphrase.
+- Every file is `AES-256-GCM(key)` with a fresh 96-bit IV. Associated data = file purpose (`doc`, `att:<id>`),
+  so ciphertexts can't be swapped.
+- Protection therefore equals the Google account's protection (use 2-Step Verification). It keeps files
+  encrypted at rest and stops anything else in the browser or Drive from reading them as plain files, but it is
+  not end-to-end against Google.
 
 ## Data model
 One encrypted document `{ schema, items: { id: item } }`; item types `task`, `note`, `project`, `att`

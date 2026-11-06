@@ -23,10 +23,9 @@ try {
       async wipe() { files.clear(); },
     });
     const A = new Vault({ id: 'A', mode: 'google' }, remote());
-    await A.create('cactus-violin-harbor-ninety');
+    await A.open();
     const B = new Vault({ id: 'B', mode: 'google' }, remote());
-    await B.loadMeta();
-    await B.unlock('cactus-violin-harbor-ninety');
+    await B.open(); // picks up A's key from the shared Drive
     const n1 = A.put({ type: 'note', title: 'from A', attachments: [] });
     const att = await A.addAttachment(new File(['hello pdf'], 'x.pdf', { type: 'application/pdf' }), n1.id);
     A.update(n1.id, { attachments: [att] });

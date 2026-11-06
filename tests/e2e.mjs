@@ -22,7 +22,6 @@ writeFileSync(png, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAA
 const pdf = join(tmp, 'doc.pdf');
 writeFileSync(pdf, '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj 3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF');
 
-const PASS = 'cactus-violin-harbor-ninety';
 const SECRET = 'TOPSECRETNOTEBODY';
 const errors = [];
 const browser = await chromium.launch();
@@ -36,17 +35,9 @@ try {
   await page.getByText('Google sign-in is not set up yet').waitFor();
   if (shots) await page.screenshot({ path: `${shots}/1-welcome.png` });
 
-  // Create vault
+  // Straight into the app: no passphrase
   await page.getByRole('button', { name: 'Use on this device only' }).click();
-  await page.getByText('Create your vault').waitFor();
-  await page.locator('input[type=password]').nth(0).fill(PASS);
-  await page.locator('input[type=password]').nth(1).fill(PASS);
-  await page.getByRole('button', { name: 'Create my encrypted vault' }).click();
-  await page.getByText('Save your recovery code').waitFor({ timeout: 15000 });
-  const code = await page.locator('code.recovery').textContent();
-  assert.match(code, /^([A-Z2-9]{4}-){7}[A-Z2-9]{4}$/);
-  await page.getByLabel('I have saved my recovery code').check();
-  await page.getByRole('button', { name: 'Open my planner' }).click();
+  await page.locator('.top').waitFor();
 
   // Only two tabs: Planner and Notes
   const tabs = await page.locator('nav.tabs a').allTextContents();
@@ -136,36 +127,19 @@ try {
     const parts = vals.map((v) => (v instanceof Uint8Array ? new TextDecoder('latin1').decode(v) : JSON.stringify(v)));
     return parts.join('\n') + JSON.stringify(localStorage);
   });
-  for (const word of [SECRET, 'Trip ideas', 'Write report', 'Call bank', 'loan', 'doc.pdf', 'PDF-1.4', PASS]) {
+  for (const word of [SECRET, 'Trip ideas', 'Write report', 'Call bank', 'loan', 'doc.pdf', 'PDF-1.4']) {
     assert.ok(!dump.includes(word), `plaintext "${word}" found in browser storage`);
   }
 
-  // Lock, wrong passphrase, unlock
-  await page.getByRole('button', { name: 'Lock', exact: true }).click();
-  await page.getByText('Locked.').waitFor();
-  assert.equal(await page.locator('.nl-item').count(), 0);
-  await page.locator('input[type=password]').fill('not the passphrase');
-  await page.getByRole('button', { name: 'Unlock' }).click();
-  await page.getByText('Wrong passphrase.').waitFor({ timeout: 15000 });
-  await page.locator('input[type=password]').fill(PASS);
-  await page.getByRole('button', { name: 'Unlock' }).click();
-  await page.locator('.top').waitFor({ timeout: 15000 });
-
-  // Reload: data persists (encrypted), recovery code unlocks
+  // Reload: data persists (encrypted) and opens without any passphrase
   await page.goto(`http://127.0.0.1:${PORT}/#/notes`);
   await page.reload();
   await page.getByRole('button', { name: 'Use on this device only' }).click();
-  await page.getByRole('button', { name: 'Forgot passphrase? Use recovery code' }).click();
-  await page.locator('input[type=password]').fill(code);
-  await page.getByRole('button', { name: 'Unlock' }).click();
-  await page.getByText('Set a new passphrase').waitFor({ timeout: 15000 });
-  await page.locator('input[type=password]').nth(0).fill(PASS + '-2');
-  await page.locator('input[type=password]').nth(1).fill(PASS + '-2');
-  await page.getByRole('button', { name: 'Save' }).click();
   await page.locator('.nl-item', { hasText: 'Trip ideas' }).click();
   await page.locator('.note-pane .rte', { hasText: SECRET }).waitFor();
   await page.locator('.note-pane .rte img[src^="blob:"]').waitFor();
   assert.ok((await page.locator('.note-pane .rte b, .note-pane .rte strong').first().textContent()).startsWith('bold bit'));
+  assert.equal(await page.getByText(/passphrase/i).count(), 0);
 
   // Settings is reachable from the gear, not a tab
   await page.getByRole('link', { name: 'Settings' }).click();

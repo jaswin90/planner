@@ -60,11 +60,6 @@ label.check { display: flex; gap: 8px; align-items: center; }
 .logo { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: var(--accent); color: #fff; }
 .lead { font-size: 17px; margin: 0; }
 .points { color: var(--muted); font-size: 13px; padding-left: 18px; margin: 6px 0 0; }
-.meter { height: 6px; background: var(--panel2); border-radius: 3px; overflow: hidden; }
-.meter span { display: block; height: 100%; width: 0; transition: width .2s; background: var(--danger); }
-.meter[data-s="1"] span { width: 25%; } .meter[data-s="2"] span { width: 50%; background: var(--warn); }
-.meter[data-s="3"] span { width: 75%; background: var(--ok); } .meter[data-s="4"] span { width: 100%; background: var(--ok); }
-.recovery { display: block; font-size: 18px; letter-spacing: 1px; padding: 14px; text-align: center; background: var(--panel2); border-radius: 8px; user-select: all; word-break: break-all; }
 
 /* shell */
 .shell { display: flex; flex-direction: column; height: 100%; }
