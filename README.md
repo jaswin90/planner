@@ -42,12 +42,13 @@ No server, no database, no build step, no dependencies.
    - **Authorized JavaScript origins**: `https://jaswin90.github.io`
      (add `http://localhost:8080` too if you want to test on your computer)
    - No redirect URIs needed.
-5. Copy the **Client ID** (it looks like `1234567890-abc...apps.googleusercontent.com`) into
-   [`js/config.js`](js/config.js):
-   ```js
-   googleClientId: '1234567890-abc....apps.googleusercontent.com',
-   ```
-   Commit and push. The client ID is **not a secret**. Google only accepts it from the origins you listed.
+5. Copy the **Client ID** (it looks like `1234567890-abc...apps.googleusercontent.com`). Don't put it in the code.
+   Store it in the repo settings instead:
+   **GitHub → Settings → Secrets and variables → Actions → New repository secret**,
+   Name `GOOGLE_CLIENT_ID`, Secret = the client ID. Then re-run the deploy
+   (**Actions → Test and deploy to GitHub Pages → Run workflow**).
+   The workflow inserts it into the published site. (It is visible in the live site, as it must be for any
+   Google sign-in; Google only accepts it from the origins you listed.)
 
 > In "Testing" mode Google may ask you to sign in again about once a week. That's normal.
 

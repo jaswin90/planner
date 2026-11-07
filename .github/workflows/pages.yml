@@ -37,6 +37,22 @@ jobs:
           mkdir _site
           cp -r index.html icon.svg *.png manifest.webmanifest sw.js css js _site/
           touch _site/.nojekyll
+      - name: Insert Google client ID (from repo settings, not from the code)
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID || vars.GOOGLE_CLIENT_ID }}
+        run: |
+          if [ -z "$GOOGLE_CLIENT_ID" ]; then
+            echo "::warning::GOOGLE_CLIENT_ID is not set: the site will deploy without Google sign-in."
+            exit 0
+          fi
+          if ! printf '%s' "$GOOGLE_CLIENT_ID" | grep -Eq '^[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com$'; then
+            echo "::error::GOOGLE_CLIENT_ID does not look like a Google OAuth client ID."
+            exit 1
+          fi
+          grep -q "googleClientId: ''" _site/js/config.js
+          sed -i "s|googleClientId: ''|googleClientId: '$GOOGLE_CLIENT_ID'|" _site/js/config.js
+          grep -q "googleClientId: '$GOOGLE_CLIENT_ID'" _site/js/config.js
+          echo "Client ID inserted."
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
