@@ -54,7 +54,7 @@ then, because clearing browser data (or a VDI profile reset) erases it. Import i
 | Dangerous attachments | Files open as images, PDF or plain text only; anything else (HTML, SVG…) is downloaded, never rendered. |
 | Swapped / tampered files | Each encrypted file is bound to its name (AES-GCM associated data); any change is detected. |
 | Clickjacking | The app refuses to run inside a frame. |
-| Tracking / referrer leaks | No analytics, no third-party fonts or CDNs, `no-referrer`. |
+| Tracking / referrer leaks | No analytics, no third-party fonts or CDNs; other sites see at most this site's origin, never page URLs (`strict-origin-when-cross-origin`, needed by the sign-in frame). |
 
 What this does **not** protect against (the trade-off for having no passphrase):
 - The encryption key is kept in your Drive app folder, so Google, or anyone who gets into your Google
