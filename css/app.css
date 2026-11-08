@@ -347,3 +347,20 @@ img.preview { max-width: 100%; max-height: 65vh; object-fit: contain; border-rad
   .notes3 { display: block; }
 }
 .modal-body label.check { flex-direction: row; align-items: center; }
+
+/* Planner board uses the same navy + blue theme as the Notes side panel */
+:root { --navy: #1f2430; --navy2: #2c3242; --navy-line: #3a4152; --navy-ink: #d5d9e2; --navy-muted: #8890a0; }
+.side { background: var(--navy); color: var(--navy-ink); border-right-color: var(--navy); }
+.side .sec-head { color: var(--navy-muted); }
+.side .sec-head .count { color: var(--navy-muted); background: var(--navy2); border-radius: 99px; padding: 0 8px; font-size: 12px; }
+.side .sec-head[aria-expanded="false"] { color: #6c7486; }
+.side .quick input { background: var(--navy2); border-color: var(--navy-line); color: #fff; }
+.side .quick input::placeholder { color: var(--navy-muted); }
+.side .quick input:focus-visible { outline-color: #8fb3ff; }
+.side .empty-drop { border-color: var(--navy-line); color: var(--navy-muted); }
+.side .sec.over { outline-color: #8fb3ff; background: rgba(143,179,255,.12); }
+.side .sticky { box-shadow: 0 1px 1px rgba(0,0,0,.3), 0 8px 16px -6px rgba(0,0,0,.6); }
+.side .sticky:focus-visible { outline: 2px solid #8fb3ff; outline-offset: 2px; }
+.tabs a.on { background: color-mix(in srgb, var(--accent) 12%, var(--panel)); }
+.seg button.on, .day.today .dnum { background: var(--accent); }
+.side .tape { background: rgba(255,255,255,.82); }
