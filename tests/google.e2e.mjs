@@ -115,15 +115,15 @@ try {
   assert.ok([...drive.values()].some((f) => f.name === 'planner-key.json'), 'key created in Drive');
 
   await A.locator('nav.tabs a', { hasText: 'Notes' }).click();
-  await A.getByRole('button', { name: 'New' }).click();
+  await A.getByRole('button', { name: 'New note' }).first().click();
   await A.getByPlaceholder('Title').fill('Holiday plan');
-  await A.locator('.note-pane .rte').click();
+  await A.locator('.n-note .rte').click();
   await A.keyboard.type('Pack sunscreen PLAINTEXTCANARY');
-  const [fc] = await Promise.all([A.waitForEvent('filechooser'), A.locator('.note-pane .tb[data-cmd=image]').click()]);
+  const [fc] = await Promise.all([A.waitForEvent('filechooser'), A.locator('.n-note .tb[data-cmd=image]').click()]);
   await fc.setFiles(png);
-  await A.locator('.note-pane .rte img[src^="blob:"]').waitFor();
+  await A.locator('.n-note .rte img[src^="blob:"]').waitFor();
   await A.getByPlaceholder('Add a task', { exact: false }).count(); // noop
-  await A.locator('.note-pane .title-in').click();
+  await A.locator('.n-note .title-in').click();
   await A.waitForTimeout(2500); // debounce + sync
   await A.locator('.status.st-synced').waitFor();
   const names = [...drive.values()].map((f) => f.name).sort();
@@ -136,9 +136,9 @@ try {
   await B.getByRole('button', { name: 'Sign in with Google' }).click();
   await B.locator('.top').waitFor();
   await B.locator('nav.tabs a', { hasText: 'Notes' }).click();
-  await B.locator('.nl-item', { hasText: 'Holiday plan' }).click();
-  await B.locator('.note-pane .rte', { hasText: 'PLAINTEXTCANARY' }).waitFor();
-  await B.locator('.note-pane .rte img[src^="blob:"]').waitFor();
+  await B.locator('.nl-card', { hasText: 'Holiday plan' }).click();
+  await B.locator('.n-note .rte', { hasText: 'PLAINTEXTCANARY' }).waitFor();
+  await B.locator('.n-note .rte img[src^="blob:"]').waitFor();
 
   // B adds a task; A picks it up on its next sync (focus)
   await B.locator('nav.tabs a', { hasText: 'Planner' }).click();

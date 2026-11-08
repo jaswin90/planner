@@ -6,8 +6,11 @@
 const TAGS = new Set([
   'P', 'DIV', 'BR', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'DEL', 'SUB', 'SUP',
   'H1', 'H2', 'H3', 'UL', 'OL', 'LI', 'BLOCKQUOTE', 'PRE', 'CODE', 'A', 'IMG', 'SPAN',
-  'MARK', 'HR', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TH', 'TD',
+  'MARK', 'HR', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TH', 'TD', 'H4',
 ]);
+// Embedded blocks: their inside is drawn by the app at render time, so any
+// stored content inside them is thrown away.
+const EMBEDS = { 'eq-block': 'tex', eq: 'tex', voice: 'att', filecard: 'att' };
 // Elements removed together with their content.
 const DROP = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'TEMPLATE', 'NOSCRIPT', 'SVG', 'MATH', 'FORM', 'INPUT', 'BUTTON', 'TEXTAREA', 'SELECT', 'LINK', 'META', 'BASE', 'TITLE', 'HEAD', 'AUDIO', 'VIDEO', 'SOURCE', 'FRAME', 'FRAMESET']);
 const ATT_ID = /^[0-9a-f]{24}$/;
@@ -19,6 +22,15 @@ function safeHref(href) {
     if (u.origin === 'https://invalid.example') return null; // relative links are pointless here
     return ['http:', 'https:', 'mailto:'].includes(u.protocol) ? u.href : null;
   } catch { return null; }
+}
+
+function embedKind(el) {
+  for (const k of Object.keys(EMBEDS)) if (el.classList.contains(k)) return k;
+  return null;
+}
+
+function validTex(t) {
+  return typeof t === 'string' && t.length > 0 && t.length <= 2000;
 }
 
 function clean(node, doc) {
@@ -51,6 +63,20 @@ function clean(node, doc) {
       if (c === 'true' || c === 'false') keep['data-checked'] = c;
     } else if (tag === 'UL') {
       if (child.classList.contains('checklist')) keep.class = 'checklist';
+    } else if ((tag === 'DIV' || tag === 'SPAN') && embedKind(child)) {
+      const kind = embedKind(child);
+      const ok = EMBEDS[kind] === 'tex' ? validTex(child.getAttribute('data-tex')) : ATT_ID.test(child.getAttribute('data-att') || '');
+      if (!ok || (tag === 'SPAN') !== (kind === 'eq')) { child.remove(); continue; }
+      keep.class = kind;
+      keep.contenteditable = 'false';
+      if (EMBEDS[kind] === 'tex') keep['data-tex'] = child.getAttribute('data-tex');
+      else keep['data-att'] = child.getAttribute('data-att');
+      for (const a of Array.from(child.attributes)) child.removeAttribute(a.name);
+      for (const [k, v] of Object.entries(keep)) child.setAttribute(k, v);
+      child.textContent = '';
+      continue;
+    } else if (tag === 'DIV' && child.classList.contains('callout')) {
+      keep.class = 'callout';
     } else if (tag === 'SPAN') {
       const a = child.getAttribute('data-att');
       if (a && ATT_ID.test(a) && child.classList.contains('att-chip')) { keep['data-att'] = a; keep.class = 'att-chip'; keep.contenteditable = 'false'; }

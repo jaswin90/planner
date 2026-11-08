@@ -35,7 +35,7 @@ jobs:
       - name: Collect site files (app only, no tests or docs)
         run: |
           mkdir _site
-          cp -r index.html icon.svg *.png manifest.webmanifest sw.js css js _site/
+          cp -r index.html icon.svg *.png manifest.webmanifest sw.js css js vendor _site/
           touch _site/.nojekyll
       - name: Insert Google client ID (from repo settings, not from the code)
         env:

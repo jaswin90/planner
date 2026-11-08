@@ -5,22 +5,23 @@
 import { h, icon, clear, modal, confirmDialog } from './ui.js';
 import { SECTIONS, sectionOf, liveItems, monthGrid, isoDate, htmlToText } from './model.js';
 import { createEditor, attachmentList } from './editor.js';
+import { currentProject, projectSelect } from './projects.js';
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const phone = typeof window !== 'undefined' && window.matchMedia?.('(max-width: 760px)').matches;
-const state = { y: new Date().getFullYear(), m: new Date().getMonth(), day: isoDate(new Date()), mode: phone ? 'day' : 'month', project: '', collapsed: new Set(phone ? ['done', 'backlog'] : ['done']) };
+const state = { y: new Date().getFullYear(), m: new Date().getMonth(), day: isoDate(new Date()), mode: phone ? 'day' : 'month', collapsed: new Set(phone ? ['done', 'backlog'] : ['done']) };
 
 export function renderPlanner(root, vault) {
   clear(root);
-  const tasks = liveItems(vault.doc, 'task').filter((t) => !state.project || t.projectId === state.project);
-  const projects = liveItems(vault.doc, 'project').sort((a, b) => a.name.localeCompare(b.name));
+  const project = currentProject(vault);
+  const tasks = liveItems(vault.doc, 'task').filter((t) => !project || t.projectId === project);
   const rerender = () => renderPlanner(root, vault);
 
   // ---- sidebar ----
   const quick = h('input', { type: 'text', placeholder: 'Add a task and press Enter', 'aria-label': 'New task', maxlength: 300 });
   quick.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' || !quick.value.trim()) return;
-    vault.put({ type: 'task', title: quick.value.trim(), status: 'todo', projectId: state.project || null, attachments: [] });
+    vault.put({ type: 'task', title: quick.value.trim(), status: 'todo', projectId: project || null, attachments: [] });
     quick.value = '';
     rerender();
     root.querySelector('.quick input')?.focus();
@@ -28,9 +29,6 @@ export function renderPlanner(root, vault) {
 
   const side = h('aside', { class: 'side' },
     h('div', { class: 'quick' }, quick),
-    h('select', { 'aria-label': 'Filter by project', onchange: (e) => { state.project = e.target.value; rerender(); } },
-      h('option', { value: '' }, 'All projects'),
-      projects.map((p) => h('option', { value: p.id, selected: state.project === p.id }, p.name))),
     SECTIONS.map((s) => {
       const list = tasks.filter((t) => sectionOf(t) === s.key).sort(sortTasks);
       const open = !state.collapsed.has(s.key);
@@ -51,10 +49,11 @@ export function renderPlanner(root, vault) {
 
   function sticky(t) {
     const p = t.projectId && vault.get(t.projectId);
-    const el = h('div', { class: `sticky st-${sectionOf(t)}`, draggable: 'true', tabindex: '0', role: 'button', dataset: { id: t.id }, vars: p ? { '--pc': p.color } : {} },
+    const el = h('div', { class: `sticky st-${sectionOf(t)} tilt${tiltOf(t.id)}`, draggable: 'true', tabindex: '0', role: 'button', dataset: { id: t.id }, vars: p ? { '--pc': p.color } : {} },
+      h('span', { class: 'tape', 'aria-hidden': 'true' }),
       h('div', { class: 'st-title' }, t.title || 'Untitled'),
       h('div', { class: 'st-meta' },
-        p && h('span', { class: 'pdot' }, p.name),
+        p && h('span', { class: 'ptag pdot' }, p.name),
         t.date && h('span', {}, icon('calendar'), shortDate(t.date) + (t.time ? ` ${t.time}` : '')),
         t.due && h('span', { class: isOverdue(t) ? 'overdue' : '' }, `due ${shortDate(t.due)}`),
         (t.attachments || []).length > 0 && h('span', {}, icon('clip'), String(t.attachments.length))));
@@ -147,11 +146,15 @@ export function renderPlanner(root, vault) {
   }
 
   function addOn(date, time = null) {
-    const t = vault.put({ type: 'task', title: '', status: 'todo', date, time, projectId: state.project || null, attachments: [] });
+    const t = vault.put({ type: 'task', title: '', status: 'todo', date, time, projectId: project || null, attachments: [] });
     openTask(vault, t.id, rerender, { isNew: true });
   }
 
   root.append(h('div', { class: 'planner' }, side, h('main', { class: 'cal-wrap' }, nav, body)));
+}
+
+function tiltOf(id) {
+  return parseInt(id.slice(-2), 16) % 4;
 }
 
 function shift(n) {
@@ -191,7 +194,6 @@ function dropTarget(el, onDrop) {
 export function openTask(vault, id, after, { isNew = false } = {}) {
   const t = vault.get(id);
   if (!t) return;
-  const projects = liveItems(vault.doc, 'project').sort((a, b) => a.name.localeCompare(b.name));
   const save = (patch) => vault.update(id, patch);
   const titleIn = h('input', { type: 'text', class: 'title-in', value: t.title, placeholder: 'Task title', maxlength: 300, oninput: (e) => save({ title: e.target.value }) });
   const attBox = h('div');
@@ -203,7 +205,7 @@ export function openTask(vault, id, after, { isNew = false } = {}) {
     drawAtts();
   } })); };
   const editor = createEditor({
-    vault, html: t.html || '', ownerId: id, placeholder: 'Notes, links, photos, PDFs…',
+    vault, html: t.html || '', ownerId: id, compact: true, placeholder: 'Notes, links, photos, PDFs…',
     onChange: (html) => save({ html }),
     onAttachmentsChange: (aid) => { save({ attachments: [...(vault.get(id).attachments || []), aid] }); drawAtts(); },
   });
@@ -214,8 +216,7 @@ export function openTask(vault, id, after, { isNew = false } = {}) {
     h('div', { class: 'grid4' },
       field('Status', h('select', { onchange: (e) => save({ status: e.target.value }) },
         [['todo', 'To do'], ['doing', 'Doing'], ['done', 'Done'], ['backlog', 'Backlog']].map(([v, l]) => h('option', { value: v, selected: t.status === v }, l)))),
-      field('Project', h('select', { onchange: (e) => save({ projectId: e.target.value || null }) },
-        h('option', { value: '' }, '—'), projects.map((p) => h('option', { value: p.id, selected: t.projectId === p.id }, p.name)))),
+      field('Project', projectSelect(vault, t.projectId, (v) => save({ projectId: v }))),
       field('Planned for', h('input', { type: 'date', value: t.date || '', onchange: (e) => save({ date: e.target.value || null }) })),
       field('Time', h('input', { type: 'time', value: t.time || '', onchange: (e) => save({ time: e.target.value || null }) })),
       field('Due', h('input', { type: 'date', value: t.due || '', onchange: (e) => save({ due: e.target.value || null }) }))),

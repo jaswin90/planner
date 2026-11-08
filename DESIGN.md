@@ -20,9 +20,13 @@ Browser ──(AES-GCM ciphertext only)──> Google Drive appDataFolder   (syn
 | `js/model.js` | Data model, per-item merge, calendar maths (no DOM; unit tested) |
 | `js/google.js` | Google Identity Services token client + Drive REST |
 | `js/sanitize.js` | Allow-list HTML sanitizer |
-| `js/editor.js` | Rich-text editor, photos, file chips, PDF viewer |
-| `js/planner.js` | Sidebar of stickies, Day view, Month view, task dialog |
-| `js/notes.js` | Note list, search, note editor |
+| `js/editor.js` | Rich-text editor: tables, equations, callouts, photos, voice notes, file cards, PDF preview |
+| `js/math.js` | Lazy-loads vendored KaTeX, renders equations as MathML (no fonts or inline styles needed) |
+| `js/recorder.js` | Voice-note recording (MediaRecorder) |
+| `js/projects.js` | Project dropdown, project pickers, current-project filter |
+| `vendor/katex/` | KaTeX 0.16.11 (MIT), unmodified |
+| `js/planner.js` | Sticky board, Day view, Month view, task dialog |
+| `js/notes.js` | Three collapsible panes: projects, sticky note list, note |
 | `js/settings.js` | Projects/notebooks, account, backup, delete |
 | `js/app.js` | Google sign-in, header, routing |
 | `sw.js` | Offline cache of the app's own files (never user data) |

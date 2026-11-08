@@ -3,12 +3,13 @@
 A notes and planner app that runs entirely in your browser. You can use it from any device at
 `https://jaswin90.github.io/planner/`.
 
-- **Planner**: Day and Month views. A sidebar of sticky tasks sorted into **Unplanned / Doing / Planned /
-  Backlog / Done**. Drag a sticky onto a day (Month view) or an hour (Day view) to plan it.
-- **Notes**: rich text (headings, bold/italic/underline, highlight, lists, checklists, quotes, code, links),
-  **photos inline**, and **PDFs or any other file attached**. Paste or drag files straight in. You can preview
-  PDFs and photos inside the app.
-- **Sign in with Google.** Your data syncs between your devices through a hidden app folder in your own Google Drive.
+- **Planner**: Day and Month views. Your to-dos are sticky notes in a board on the left, grouped
+  **Unplanned / Doing / Planned / Backlog / Done**. Drag a sticky onto a day (Month) or an hour (Day) to plan it.
+- **Projects**: pick one from the **Project ▾** dropdown at the top (or create a new one there). The planner and notes
+  then show only that project.
+- **Notes** (Evernote-style, three panes that fold away): projects | sticky-note list | the note. A note can hold
+  headings, lists, checklists, **tables**, **equations** (LaTeX), callouts, **photos**, **voice notes** (record in the
+  browser), and **PDFs or any file** (PDFs preview inline). Search also finds file names.
 - **Simple login.** Just Google sign-in, with no extra passwords. Files are stored encrypted, and your Google
   account is the key.
 - Works offline. It saves on the device and syncs when you're back online. You can install it as an app

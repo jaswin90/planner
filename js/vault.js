@@ -250,5 +250,6 @@ export class Vault extends EventTarget {
 // Everything else downloads as a plain binary.
 const SAFE = /^(image\/(png|jpeg|gif|webp|avif|bmp)|application\/pdf|text\/plain|audio\/[a-z0-9.+-]+|video\/(mp4|webm|ogg))$/;
 export function safeMime(m) {
-  return SAFE.test(m || '') ? m : 'application/octet-stream';
+  const base = String(m || '').split(';')[0].trim().toLowerCase();
+  return SAFE.test(base) ? base : 'application/octet-stream';
 }

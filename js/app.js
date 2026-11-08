@@ -6,6 +6,7 @@ import { Vault } from './vault.js';
 import { renderPlanner } from './planner.js';
 import { renderNotes, currentNoteEditor } from './notes.js';
 import { renderSettings } from './settings.js';
+import { projectDropdown } from './projects.js';
 
 // Refuse to run inside a frame (clickjacking). GitHub Pages cannot send
 // frame-ancestors / X-Frame-Options headers, so we do it here.
@@ -89,7 +90,7 @@ async function start(account) {
 }
 
 // ---------- main app ----------
-let view, statusPill;
+let view, statusPill, ddSlot;
 
 function enterApp() {
   clear(app);
@@ -99,10 +100,11 @@ function enterApp() {
     h('a', { href: '#/planner', dataset: { tab: 'planner' } }, icon('calendar'), h('span', {}, 'Planner')),
     h('a', { href: '#/notes', dataset: { tab: 'notes' } }, icon('note'), h('span', {}, 'Notes')));
   view = h('div', { class: 'view' });
+  ddSlot = h('div', { class: 'dd-slot' });
   app.append(
     h('header', { class: 'top' },
       h('div', { class: 'brand small' }, h('span', { class: 'logo' }, icon('calendar')), h('span', { class: 'bname' }, 'My Planner')),
-      nav, h('span', { class: 'grow' }), statusPill,
+      nav, ddSlot, h('span', { class: 'grow' }), statusPill,
       h('a', { class: 'icon-btn', href: '#/settings', title: 'Settings', 'aria-label': 'Settings', dataset: { tab: 'settings' } }, icon('gear')),
       h('button', { class: 'icon-btn', title: 'Sign out', 'aria-label': 'Sign out', onclick: signOut }, icon('logout'))),
     view);
@@ -117,8 +119,13 @@ function enterApp() {
   syncTimer = setInterval(() => { if (document.visibilityState === 'visible') vault?.sync(); }, 60_000);
 }
 
+function drawProjectDropdown() {
+  if (ddSlot && vault?.dek) clear(ddSlot).append(projectDropdown(vault));
+}
+
 function route() {
   if (!vault?.dek || !view) return;
+  drawProjectDropdown();
   const [, name = 'planner', arg] = location.hash.split('/');
   for (const a of app.querySelectorAll('[data-tab]')) a.classList.toggle('on', a.dataset.tab === name);
   pendingRefresh = false;
@@ -169,6 +176,7 @@ async function signOut() {
 
 window.addEventListener('hashchange', () => { currentNoteEditor()?.editor.flush(); route(); });
 window.addEventListener('online', () => vault?.sync());
+window.addEventListener('projectchange', () => { currentNoteEditor()?.editor.flush(); route(); });
 window.addEventListener('focus', () => vault?.dek && vault.sync());
 
 window.addEventListener('pagehide', () => currentNoteEditor()?.editor.flush());

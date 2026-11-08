@@ -24,10 +24,10 @@ writeFileSync(pdf, '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj
 
 const SECRET = 'TOPSECRETNOTEBODY';
 const errors = [];
-const browser = await chromium.launch();
+const browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
 let failed = false;
 try {
-  const ctx = await browser.newContext({ viewport: { width: 1360, height: 860 } });
+  const ctx = await browser.newContext({ viewport: { width: 1360, height: 860 }, permissions: ['microphone'] });
   const page = await ctx.newPage();
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(String(e)));
@@ -44,6 +44,16 @@ try {
   assert.deepEqual(tabs, ['Planner', 'Notes']);
   // Only Day and Month views
   assert.deepEqual(await page.locator('.seg button').allTextContents(), ['Day', 'Month']);
+
+  // Projects: create one from the header dropdown, then back to All
+  await page.locator('.projdd').click();
+  await page.getByRole('button', { name: 'New project…' }).click();
+  await page.locator('dialog input').fill('Travel');
+  await page.locator('dialog').getByRole('button', { name: 'OK' }).click();
+  await page.locator('.projdd', { hasText: 'Travel' }).waitFor();
+  await page.locator('.projdd').click();
+  await page.locator('.dd-item', { hasText: 'All projects' }).click();
+  await page.locator('.projdd', { hasText: 'All' }).waitFor();
 
   // Planner: quick-add and drag onto a day
   await page.getByPlaceholder('Add a task and press Enter').fill('Write report');
@@ -77,40 +87,72 @@ try {
 
   // Notes: create a rich note with photo and PDF
   await page.locator('nav.tabs a', { hasText: 'Notes' }).click();
-  await page.getByRole('button', { name: 'New' }).click();
+  await page.getByRole('button', { name: 'New note' }).first().click();
   await page.getByPlaceholder('Title').fill('Trip ideas');
-  await page.locator('.note-pane .rte').click();
+  await page.locator('.n-note .rte').click();
   await page.keyboard.type(SECRET + ' ');
   await page.keyboard.press('Control+b');
   await page.keyboard.type('bold bit');
   await page.keyboard.press('Control+b');
-  const [fc1] = await Promise.all([page.waitForEvent('filechooser'), page.locator('.note-pane .tb[data-cmd=image]').click()]);
+  const [fc1] = await Promise.all([page.waitForEvent('filechooser'), page.locator('.n-note .tb[data-cmd=image]').click()]);
   await fc1.setFiles(png);
-  await page.locator('.note-pane .rte img[data-att][src^="blob:"]').waitFor();
-  const [fc2] = await Promise.all([page.waitForEvent('filechooser'), page.locator('.note-pane .tb[data-cmd=attach]').click()]);
+  await page.locator('.n-note .rte img[data-att][src^="blob:"]').waitFor();
+  const [fc2] = await Promise.all([page.waitForEvent('filechooser'), page.locator('.n-note .tb[data-cmd=attach]').click()]);
   await fc2.setFiles(pdf);
-  await page.locator('.note-pane .rte .att-chip', { hasText: 'doc.pdf' }).waitFor();
+  await page.locator('.n-note .rte .filecard', { hasText: 'doc.pdf' }).waitFor();
   await page.locator('.att-list .att-name', { hasText: 'doc.pdf' }).waitFor();
   await page.locator('.att-list .att-name', { hasText: 'photo.png' }).waitFor();
 
   // Checklist
-  await page.locator('.note-pane .rte').press('End');
+  await page.locator('.n-note .rte').press('End');
   await page.keyboard.press('Enter');
-  await page.locator('.note-pane .tb[data-cmd=checklist]').click();
+  await page.locator('.n-note .tb[data-cmd=checklist]').click();
   await page.keyboard.type('Book hotel');
-  await page.locator('.note-pane ul.checklist li').waitFor();
+  await page.locator('.n-note ul.checklist li').waitFor();
 
   // Paste hostile HTML: must be neutralised
   await page.evaluate(() => {
     const dt = new DataTransfer();
     dt.setData('text/html', '<img src=x onerror="window.__pwned=1"><a href="javascript:window.__pwned=2">bad</a><script>window.__pwned=3</script><b onclick="x()">ok</b><iframe src="https://example.com"></iframe>');
-    document.querySelector('.note-pane .rte').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+    document.querySelector('.n-note .rte').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
   });
   await page.waitForTimeout(700);
   assert.equal(await page.evaluate(() => window.__pwned), undefined);
-  const html = await page.locator('.note-pane .rte').innerHTML();
+  const html = await page.locator('.n-note .rte').innerHTML();
   assert.ok(!/onerror|onclick|javascript:|<script|<iframe/i.test(html), html);
-  await page.locator('.nl-item', { hasText: 'Trip ideas' }).waitFor();
+  await page.locator('.nl-card', { hasText: 'Trip ideas' }).waitFor();
+
+  // Table: insert, type with Tab, add a column
+  await page.locator('.n-note .rte').press('Control+End');
+  await page.locator('.n-note .tb[data-cmd=table]').click();
+  for (const c of ['Item', 'Cost', 'Paid', 'Hotel', '9000']) { await page.keyboard.type(c); await page.keyboard.press('Tab'); }
+  await page.locator('.table-bar').getByRole('button', { name: '+ Column' }).click();
+  assert.equal(await page.locator('.n-note .rte table tr').first().locator('th').count(), 4);
+
+  // Equation via the dialog, rendered as MathML
+  await page.locator('.n-note .rte').press('Control+End');
+  await page.locator('.n-note .tb[data-cmd=equation]').click();
+  await page.locator('dialog textarea').fill('E = mc^2 + \\frac{a}{b}');
+  await page.locator('dialog .eq-preview math').waitFor();
+  await page.locator('dialog').getByRole('button', { name: 'Insert' }).click();
+  await page.locator('.n-note .rte .eq-block math').waitFor();
+
+  // Voice note with the (fake) microphone
+  await page.locator('.n-note .tb[data-cmd=record]').click();
+  await page.waitForTimeout(1200);
+  await page.locator('dialog').getByRole('button', { name: '■ Stop & save' }).click();
+  await page.locator('.n-note .rte .voice audio[src^="blob:"]').waitFor();
+
+  // PDF inline preview
+  await page.locator('.n-note .rte .filecard', { hasText: 'doc.pdf' }).getByRole('button', { name: 'Preview' }).click();
+  await page.locator('.n-note .rte .filecard iframe').waitFor();
+
+  // Collapse both side panes, then bring them back
+  await page.getByRole('button', { name: 'Hide note list' }).click();
+  await page.getByRole('button', { name: 'Hide projects pane' }).click();
+  assert.equal(await page.locator('.n-list').count(), 0);
+  await page.getByRole('button', { name: 'Show list' }).click();
+  await page.locator('.n-list').waitFor();
   if (shots) await page.screenshot({ path: `${shots}/4-notes.png` });
 
   // Open the PDF viewer
@@ -119,7 +161,7 @@ try {
   await page.keyboard.press('Escape');
 
   // Let autosave run, then check nothing readable is stored in the browser.
-  await page.locator('.note-pane .title-in').click();
+  await page.locator('.n-note .title-in').click();
   await page.waitForTimeout(800);
   const dump = await page.evaluate(async () => {
     const db = await new Promise((r) => { const q = indexedDB.open('planner'); q.onsuccess = () => r(q.result); });
@@ -135,10 +177,13 @@ try {
   await page.goto(`http://127.0.0.1:${PORT}/#/notes`);
   await page.reload();
   await page.getByRole('button', { name: 'Use on this device only' }).click();
-  await page.locator('.nl-item', { hasText: 'Trip ideas' }).click();
-  await page.locator('.note-pane .rte', { hasText: SECRET }).waitFor();
-  await page.locator('.note-pane .rte img[src^="blob:"]').waitFor();
-  assert.ok((await page.locator('.note-pane .rte b, .note-pane .rte strong').first().textContent()).startsWith('bold bit'));
+  await page.locator('.nl-card', { hasText: 'Trip ideas' }).click();
+  await page.locator('.n-note .rte', { hasText: SECRET }).waitFor();
+  await page.locator('.n-note .rte img[src^="blob:"]').waitFor();
+  assert.ok((await page.locator('.n-note .rte b, .n-note .rte strong').first().textContent()).startsWith('bold bit'));
+  await page.locator('.n-note .rte .eq-block math').waitFor();
+  await page.locator('.n-note .rte .voice audio[src^="blob:"]').waitFor();
+  assert.equal(await page.locator('.n-note .rte table td', { hasText: '9000' }).count(), 1);
   assert.equal(await page.getByText(/passphrase/i).count(), 0);
 
   // Settings is reachable from the gear, not a tab
@@ -165,9 +210,9 @@ try {
   await p2.locator('dialog').getByRole('button', { name: 'OK' }).click();
   await p2.getByText(/Imported \d+ items/).waitFor({ timeout: 30000 });
   await p2.locator('nav.tabs a', { hasText: 'Notes' }).click();
-  await p2.locator('.nl-item', { hasText: 'Trip ideas' }).click();
-  await p2.locator('.note-pane .rte', { hasText: SECRET }).waitFor();
-  await p2.locator('.note-pane .rte img[src^="blob:"]').waitFor();
+  await p2.locator('.nl-card', { hasText: 'Trip ideas' }).click();
+  await p2.locator('.n-note .rte', { hasText: SECRET }).waitFor();
+  await p2.locator('.n-note .rte img[src^="blob:"]').waitFor();
   await ctx2.close();
 
   // Phone layout renders
