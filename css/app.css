@@ -202,7 +202,8 @@ label.check { display: flex; gap: 8px; align-items: center; }
 .tb { min-width: 32px; height: 32px; border: 0; background: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px; display: inline-flex; gap: 5px; align-items: center; justify-content: center; padding: 0 7px; }
 .tb.hl { color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .rte-bar.compact .tb-l { display: none; }
-.tb-select { padding: 4px 6px !important; font-size: 14px; }
+.tb-select { padding: 4px 6px !important; font-size: 14px; flex: none; }
+.rte-bar > * { flex-shrink: 0; }
 .hl-swatch { background: #ffe86b; color: #333; padding: 0 4px; border-radius: 3px; }
 .table-bar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 6px 8px; background: var(--panel2); border-radius: 8px; margin: 6px 0; }
 .tb:hover { background: var(--panel2); }
@@ -270,7 +271,20 @@ dialog header h2 { margin: 0; font-size: 17px; overflow: hidden; text-overflow: 
 .modal-body { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
 .modal-body label { display: flex; flex-direction: column; gap: 6px; }
 .task-form { display: flex; flex-direction: column; gap: 12px; }
-.task-form .rte { min-height: 140px; }
+/* to-do panel: same look as a note */
+dialog.sheet { position: fixed; inset: 0 0 0 auto; margin: 0; height: 100%; max-height: 100%; width: min(1080px, 100vw); max-width: 100vw; border: 0; padding: 0;
+  background: var(--panel); color: var(--text); box-shadow: -12px 0 40px rgba(0,0,0,.25); flex-direction: column; container-type: inline-size; }
+dialog.sheet[open] { display: flex; animation: slidein .18s ease-out; }
+@keyframes slidein { from { transform: translateX(40px); opacity: .6; } }
+@container (max-width: 980px) { dialog.sheet .tb-l { display: none; } }
+.sheet-band { height: 8px; flex: none; }
+.sheet-top { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
+.sheet-kind { display: inline-flex; gap: 6px; align-items: center; font-weight: 700; color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .6px; }
+dialog.sheet > .rte-bar { border-radius: 0; padding: 6px 16px; position: static; }
+dialog.sheet .n-doc .rte { min-height: 280px; }
+.task-meta { display: flex; flex-wrap: wrap; gap: 10px 14px; margin: 4px 0 14px; padding: 10px 12px; background: var(--panel2); border-radius: 10px; }
+.mfield { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.mfield select, .mfield input { font-size: 14px; color: var(--text); font-weight: 400; }
 .grid4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
 iframe.pdf { width: 100%; height: 70vh; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
 img.preview { max-width: 100%; max-height: 65vh; object-fit: contain; border-radius: 8px; align-self: center; }
@@ -319,6 +333,9 @@ img.preview { max-width: 100%; max-height: 65vh; object-fit: contain; border-rad
   .notes3:not(.open) .n-note { display: none; }
   .note-meta .back { display: inline-flex; }
   .n-doc { padding: 10px 16px 40px; }
+  dialog.sheet { width: 100vw; }
+  .sheet-top .muted { display: none; }
+  dialog.sheet > .rte-bar { overflow-x: auto; flex-wrap: nowrap; padding: 4px 8px; }
   .n-note > .rte-bar { overflow-x: auto; flex-wrap: nowrap; padding: 4px 8px; }
   .tb-l { display: none; }
   .title-in { font-size: 24px !important; }

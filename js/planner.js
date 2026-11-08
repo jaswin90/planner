@@ -2,7 +2,7 @@
 // into Unplanned / Doing / Planned / Backlog / Done. Drag a sticky onto a
 // day to plan it; drag it onto a section to change its state.
 
-import { h, icon, clear, modal, confirmDialog } from './ui.js';
+import { h, icon, clear, confirmDialog } from './ui.js';
 import { SECTIONS, sectionOf, liveItems, monthGrid, isoDate, htmlToText } from './model.js';
 import { createEditor, attachmentList } from './editor.js';
 import { currentProject, projectSelect } from './projects.js';
@@ -191,52 +191,67 @@ function dropTarget(el, onDrop) {
 }
 
 /** Task editor dialog. Edits autosave. */
+/**
+ * To-do details: opens as a full-height panel styled exactly like a note
+ * (same toolbar, title, editor and attachments). Edits autosave.
+ */
 export function openTask(vault, id, after, { isNew = false } = {}) {
   const t = vault.get(id);
   if (!t) return;
   const save = (patch) => vault.update(id, patch);
-  const titleIn = h('input', { type: 'text', class: 'title-in', value: t.title, placeholder: 'Task title', maxlength: 300, oninput: (e) => save({ title: e.target.value }) });
+  const titleIn = h('input', { type: 'text', class: 'title-in', value: t.title, placeholder: 'To-do title', maxlength: 300, 'aria-label': 'Title', oninput: (e) => save({ title: e.target.value }) });
   const attBox = h('div');
   const drawAtts = () => { clear(attBox).append(attachmentList(vault, vault.get(id)?.attachments || [], { onRemove: (aid) => {
     vault.removeAttachment(aid);
-    save({ attachments: (vault.get(id).attachments || []).filter((x) => x !== aid) });
     editor.body.querySelectorAll(`[data-att="${aid}"]`).forEach((n) => n.remove());
-    save({ html: editor.getHtml() });
+    save({ attachments: (vault.get(id).attachments || []).filter((x) => x !== aid), html: editor.getHtml() });
     drawAtts();
   } })); };
   const editor = createEditor({
-    vault, html: t.html || '', ownerId: id, compact: true, placeholder: 'Notes, links, photos, PDFs…',
+    vault, html: t.html || '', ownerId: id, placeholder: 'Notes for this to-do: text, tables, equations, photos, voice notes, PDFs…',
     onChange: (html) => save({ html }),
     onAttachmentsChange: (aid) => { save({ attachments: [...(vault.get(id).attachments || []), aid] }); drawAtts(); },
   });
   drawAtts();
-  const field = (label, input) => h('label', { class: 'field' }, h('span', {}, label), input);
-  const m = modal(isNew ? 'New task' : 'Task', h('div', { class: 'task-form' },
-    titleIn,
-    h('div', { class: 'grid4' },
-      field('Status', h('select', { onchange: (e) => save({ status: e.target.value }) },
-        [['todo', 'To do'], ['doing', 'Doing'], ['done', 'Done'], ['backlog', 'Backlog']].map(([v, l]) => h('option', { value: v, selected: t.status === v }, l)))),
-      field('Project', projectSelect(vault, t.projectId, (v) => save({ projectId: v }))),
-      field('Planned for', h('input', { type: 'date', value: t.date || '', onchange: (e) => save({ date: e.target.value || null }) })),
-      field('Time', h('input', { type: 'time', value: t.time || '', onchange: (e) => save({ time: e.target.value || null }) })),
-      field('Due', h('input', { type: 'date', value: t.due || '', onchange: (e) => save({ due: e.target.value || null }) }))),
-    editor.el,
-    h('h3', { class: 'small-h' }, 'Attachments'),
-    attBox,
-    h('div', { class: 'row' },
-      h('button', { class: 'btn danger', onclick: async () => {
-        if (await confirmDialog('Delete this task and its attachments?', { ok: 'Delete', danger: true })) { vault.remove(id); m.close(); }
-      } }, icon('trash'), 'Delete'),
+
+  const band = h('div', { class: `sheet-band st-${sectionOf(t)}` });
+  const recolor = () => { const cur = vault.get(id); if (cur) band.className = `sheet-band st-${sectionOf(cur)}`; };
+  const field = (label, input) => h('label', { class: 'mfield' }, h('span', {}, label), input);
+  const statusSel = h('select', { 'aria-label': 'Status', onchange: (e) => { save({ status: e.target.value }); recolor(); } },
+    [['todo', 'To do'], ['doing', 'Doing'], ['done', 'Done'], ['backlog', 'Backlog']].map(([v, l]) => h('option', { value: v, selected: t.status === v }, l)));
+  const dlg = h('dialog', { class: 'sheet', 'aria-label': 'To-do' },
+    band,
+    h('div', { class: 'sheet-top' },
+      h('span', { class: 'sheet-kind' }, icon('check'), isNew ? 'New to-do' : 'To-do'),
       h('span', { class: 'grow' }),
-      h('span', { class: 'muted small' }, 'Changes save automatically'),
-      h('button', { class: 'btn primary', onclick: () => m.close() }, 'Done'))), {
-    wide: true,
-    onClose: () => {
-      editor.flush();
-      const cur = vault.get(id);
-      if (cur && !(cur.title || '').trim() && !htmlToText(cur.html) && !(cur.attachments || []).length) vault.remove(id);
-      after?.();
-    },
+      h('span', { class: 'muted small' }, 'Saves automatically'),
+      h('button', { class: 'icon-btn', title: 'Delete to-do', 'aria-label': 'Delete to-do', onclick: async () => {
+        if (await confirmDialog('Delete this to-do with its notes and attachments?', { ok: 'Delete', danger: true })) { vault.remove(id); dlg.close(); }
+      } }, icon('trash')),
+      h('button', { class: 'btn primary small', onclick: () => dlg.close() }, 'Done'),
+      h('button', { class: 'icon-btn', title: 'Close', 'aria-label': 'Close', onclick: () => dlg.close() }, icon('close'))),
+    editor.bar,
+    h('div', { class: 'n-scroll' },
+      h('div', { class: 'n-doc' },
+        titleIn,
+        h('div', { class: 'task-meta' },
+          field('Status', statusSel),
+          field('Project', projectSelect(vault, t.projectId, (v) => save({ projectId: v }))),
+          field('Planned for', h('input', { type: 'date', value: t.date || '', onchange: (e) => { save({ date: e.target.value || null }); recolor(); } })),
+          field('Time', h('input', { type: 'time', value: t.time || '', onchange: (e) => save({ time: e.target.value || null }) })),
+          field('Due', h('input', { type: 'date', value: t.due || '', onchange: (e) => save({ due: e.target.value || null }) }))),
+        editor.el,
+        h('h3', { class: 'small-h' }, 'All attachments in this to-do'),
+        attBox)));
+  dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+  dlg.addEventListener('close', () => {
+    editor.flush();
+    dlg.remove();
+    const cur = vault.get(id);
+    if (cur && !(cur.title || '').trim() && !htmlToText(cur.html) && !(cur.attachments || []).length) vault.remove(id);
+    after?.();
   });
-  if (isNew) titleIn.focus();
+  document.body.append(dlg);
+  dlg.showModal();
+  (isNew ? titleIn : editor.body).focus();
 }
