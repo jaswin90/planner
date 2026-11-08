@@ -1,61 +1,61 @@
-// Google sign-in (Google Identity Services token model) and Drive storage.
+// Google Drive access through the site-wide account (jaswin90.github.io).
 //
-// Scope is drive.appdata only: the app can see nothing in your Drive except
-// its own hidden app folder, and the app folder is invisible in the Drive UI.
-// The access token lives in memory only; it is never written to storage.
+// The Planner no longer has its own Google sign-in. People sign in once at /library/
+// (invite-only, shared with the books); the Planner then asks Google, through that same
+// account, for a short-lived token for one scope: drive.appdata. That scope lets the app see
+// nothing in your Drive except its own hidden app folder. The token lives in memory only.
 
-import { CONFIG } from './config.js';
-
-const SCOPES = 'openid email profile https://www.googleapis.com/auth/drive.appdata';
+const SCOPE_DRIVE = 'https://www.googleapis.com/auth/drive.appdata';
 const API = 'https://www.googleapis.com/drive/v3';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
 
-let tokenClient = null;
 let token = null; // { access_token, expiresAt }
 let pending = null;
-let gisLoaded = null;
+let site = null;
 
-export function googleConfigured() {
-  return /^[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com$/.test(CONFIG.googleClientId || '');
+/** The site's shared account module (served by jaswin90.github.io, not by this repo). */
+export async function siteAuth() {
+  if (!site) site = import('/assets/js/site-auth.js').catch((e) => { site = null; throw e; });
+  return site;
 }
 
-function loadGis() {
-  if (!gisLoaded) {
-    gisLoaded = new Promise((resolve, reject) => {
-      if (window.google?.accounts?.oauth2) return resolve();
-      const s = document.createElement('script');
-      s.src = 'https://accounts.google.com/gsi/client';
-      s.async = true;
-      s.onload = () => resolve();
-      s.onerror = () => { gisLoaded = null; reject(new Error('Could not load Google sign-in. Are you online?')); };
-      document.head.appendChild(s);
-    });
-  }
-  return gisLoaded;
+export async function googleConfigured() {
+  try { return (await siteAuth()).configured(); } catch { return false; }
 }
 
-/** Ask Google for an access token. `interactive` = allow showing the consent popup. */
+/** Get a Drive token for the signed-in site account. Needs a click (it may open Google's popup). */
 export async function getToken({ interactive = true, hint, chooseAccount = false } = {}) {
   if (token && token.expiresAt - Date.now() > 60_000) return token.access_token;
+  if (!interactive) throw Object.assign(new Error('Google session expired. Click "Reconnect".'), { code: 'auth' });
   if (pending) return pending;
-  await loadGis();
-  pending = new Promise((resolve, reject) => {
-    tokenClient = window.google.accounts.oauth2.initTokenClient({
-      client_id: CONFIG.googleClientId,
-      scope: SCOPES,
-      hint,
-      callback: (resp) => {
-        if (resp.error) return reject(new Error(resp.error_description || resp.error));
-        if (!window.google.accounts.oauth2.hasGrantedAllScopes(resp, 'https://www.googleapis.com/auth/drive.appdata')) {
-          return reject(new Error('Please allow the app to use its private Drive folder (needed for sync).'));
-        }
-        token = { access_token: resp.access_token, expiresAt: Date.now() + Number(resp.expires_in || 3600) * 1000 };
-        resolve(token.access_token);
-      },
-      error_callback: (err) => reject(new Error(err?.type === 'popup_closed' ? 'Sign-in window was closed.' : (err?.message || 'Sign-in failed.'))),
-    });
-    tokenClient.requestAccessToken({ prompt: chooseAccount ? 'select_account' : interactive ? '' : 'none' });
-  }).finally(() => { pending = null; });
+  pending = (async () => {
+    const S = await siteAuth();
+    const { A, auth } = await S.firebase();
+    const user = auth.currentUser;
+    if (!user) throw new Error('Please sign in at the library first.');
+    const provider = new A.GoogleAuthProvider();
+    provider.addScope(SCOPE_DRIVE);
+    provider.setCustomParameters(chooseAccount ? { prompt: 'select_account' } : { login_hint: hint || user.email || '' });
+    const hasGoogle = (user.providerData || []).some((p) => p.providerId === 'google.com');
+    let result;
+    try {
+      result = hasGoogle ? await A.reauthenticateWithPopup(user, provider) : await A.linkWithPopup(user, provider);
+    } catch (e) {
+      if (e?.code === 'auth/popup-closed-by-user' || e?.code === 'auth/cancelled-popup-request') throw new Error('Google window was closed.');
+      if (e?.code === 'auth/user-mismatch') throw new Error(`Please choose the Google account ${user.email}.`);
+      if (e?.code === 'auth/credential-already-in-use') throw new Error('That Google account already belongs to another library account. Sign in with it at the library instead.');
+      throw new Error(e?.message || 'Google sign-in failed.');
+    }
+    const cred = A.GoogleAuthProvider.credentialFromResult(result);
+    if (!cred?.accessToken) throw new Error('Google did not return Drive access. Please try again.');
+    const info = await fetch('https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=' + encodeURIComponent(cred.accessToken), { referrerPolicy: 'no-referrer' })
+      .then((r) => r.json()).catch(() => ({}));
+    if (info.scope && !String(info.scope).split(' ').includes(SCOPE_DRIVE)) {
+      throw new Error('Please allow the app to use its private Drive folder (needed for sync).');
+    }
+    token = { access_token: cred.accessToken, expiresAt: Date.now() + Number(info.expires_in || 3300) * 1000 };
+    return token.access_token;
+  })().finally(() => { pending = null; });
   return pending;
 }
 
@@ -63,10 +63,8 @@ export function hasToken() {
   return !!token && token.expiresAt > Date.now();
 }
 
+/** Forget the Drive token (the site account stays signed in; sign out of it at /library/). */
 export async function signOutGoogle() {
-  if (token && window.google?.accounts?.oauth2) {
-    await new Promise((r) => window.google.accounts.oauth2.revoke(token.access_token, r));
-  }
   token = null;
 }
 

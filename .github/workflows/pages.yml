@@ -1,4 +1,4 @@
-name: Test and deploy to GitHub Pages
+name: Test and publish the redirect
 
 on:
   push:
@@ -32,27 +32,21 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - name: Collect site files (app only, no tests or docs)
+      - name: Build a redirect to the app's home on the site
+        # The app is published by jaswin90/jaswin90.github.io at /apps/planner/ (it uses the
+        # site-wide account). This repository's own Pages address forwards there, keeping #routes.
         run: |
           mkdir _site
-          cp -r index.html icon.svg *.png manifest.webmanifest sw.js css js vendor _site/
           touch _site/.nojekyll
-      - name: Insert Google client ID (from repo settings, not from the code)
-        env:
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID || vars.GOOGLE_CLIENT_ID }}
-        run: |
-          if [ -z "$GOOGLE_CLIENT_ID" ]; then
-            echo "::warning::GOOGLE_CLIENT_ID is not set: the site will deploy without Google sign-in."
-            exit 0
-          fi
-          if ! printf '%s' "$GOOGLE_CLIENT_ID" | grep -Eq '^[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com$'; then
-            echo "::error::GOOGLE_CLIENT_ID does not look like a Google OAuth client ID."
-            exit 1
-          fi
-          grep -q "googleClientId: ''" _site/js/config.js
-          sed -i "s|googleClientId: ''|googleClientId: '$GOOGLE_CLIENT_ID'|" _site/js/config.js
-          grep -q "googleClientId: '$GOOGLE_CLIENT_ID'" _site/js/config.js
-          echo "Client ID inserted."
+          cat > _site/index.html <<'HTML'
+          <!doctype html><html lang="en"><head><meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>My Planner has moved</title>
+          <link rel="canonical" href="https://jaswin90.github.io/apps/planner/">
+          <meta http-equiv="refresh" content="0; url=/apps/planner/">
+          <script>location.replace('/apps/planner/' + location.hash);</script>
+          </head><body><p>My Planner has moved to <a href="/apps/planner/">/apps/planner/</a>.</p></body></html>
+          HTML
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

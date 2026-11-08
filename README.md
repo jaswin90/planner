@@ -1,7 +1,8 @@
 # My Planner: encrypted notes + planner
 
 A notes and planner app that runs entirely in your browser. You can use it from any device at
-`https://jaswin90.github.io/planner/`.
+`https://jaswin90.github.io/apps/planner/` (published by the site repository `jaswin90/jaswin90.github.io`;
+the old address `/planner/` forwards there).
 
 - **Planner**: Day and Month views. Your to-dos are sticky notes in a board on the left, grouped
   **Unplanned / Doing / Planned / Backlog / Done**. Drag a sticky onto a day (Month) or an hour (Day) to plan it.
@@ -10,8 +11,8 @@ A notes and planner app that runs entirely in your browser. You can use it from 
 - **Notes** (Evernote-style, three panes that fold away): projects | sticky-note list | the note. A note can hold
   headings, lists, checklists, **tables**, **equations** (LaTeX), callouts, **photos**, **voice notes** (record in the
   browser), and **PDFs or any file** (PDFs preview inline). Search also finds file names.
-- **Simple login.** Just Google sign-in, with no extra passwords. Files are stored encrypted, and your Google
-  account is the key.
+- **One login for the whole site.** Sign in once at `/library/` (invite-only; the same account as the books),
+  then click **Connect Google Drive** once. Files are stored encrypted in your own Drive, and your Google account is the key.
 - Works offline. It saves on the device and syncs when you're back online. You can install it as an app
   ("Install" / "Add to Home screen").
 
@@ -19,42 +20,20 @@ No server, no database, no build step, no dependencies.
 
 ---
 
-## What you need to do (one-time setup, ~10 minutes)
+## Setup
 
-### 1. Turn on GitHub Pages
-1. On GitHub, go to **Settings → Pages → Build and deployment → Source** and choose **GitHub Actions**.
-2. Go to **Actions → "Test and deploy to GitHub Pages" → Run workflow** (or just push a commit).
-   It runs the tests and publishes the site at `https://jaswin90.github.io/planner/`.
-   Pushes to the default branch (or `main`) redeploy automatically.
+There is nothing to set up in this repository and no key or client ID in it.
 
-> On a free GitHub plan, Pages only works for **public** repositories. That's safe here: the code holds no
-> secrets and your data never goes into the repo. To keep the repo private you need GitHub Pro.
+- **Where it runs.** `jaswin90/jaswin90.github.io` fetches this repository's app files (branch named in its
+  `site.json`) and publishes them at `/apps/planner/`. This repository's own Pages workflow only runs the tests and
+  publishes a redirect from `/planner/` to `/apps/planner/`.
+- **Sign-in.** The app uses the site-wide account module `/assets/js/site-auth.js` (Firebase Auth, invite-only).
+  People sign in at `/library/`; the admin manages the invite list there. To reach Drive, the app asks Google
+  through that same account for the `drive.appdata` scope only. The Google side is set up once for the whole site
+  in the Firebase project (see the site repository's README); nobody needs to be added as a "test user".
 
-### 2. Set up Google sign-in (free)
-1. Open <https://console.cloud.google.com/> and create a project, e.g. "My Planner".
-2. **APIs & Services → Library**: search for **Google Drive API** and click **Enable**.
-3. **APIs & Services → OAuth consent screen** (also called "Google Auth Platform"):
-   - User type **External**, app name "My Planner", your email as support and developer contact.
-   - **Data access / Scopes**: add `.../auth/drive.appdata`, `openid`, `email` and `profile`.
-   - **Audience / Test users**: add your Gmail address (and anyone else who will use it).
-     You can leave the app in "Testing" mode for personal use.
-4. **APIs & Services → Credentials → Create credentials → OAuth client ID**:
-   - Application type: **Web application**
-   - **Authorized JavaScript origins**: `https://jaswin90.github.io`
-     (add `http://localhost:8080` too if you want to test on your computer)
-   - No redirect URIs needed.
-5. Copy the **Client ID** (it looks like `1234567890-abc...apps.googleusercontent.com`). Don't put it in the code.
-   Store it in the repo settings instead:
-   **GitHub → Settings → Secrets and variables → Actions → New repository secret**,
-   Name `GOOGLE_CLIENT_ID`, Secret = the client ID. Then re-run the deploy
-   (**Actions → Test and deploy to GitHub Pages → Run workflow**).
-   The workflow inserts it into the published site. (It is visible in the live site, as it must be for any
-   Google sign-in; Google only accepts it from the origins you listed.)
-
-> In "Testing" mode Google may ask you to sign in again about once a week. That's normal.
-
-### 3. First use
-Open the site and click **Sign in with Google**. That's it. On your other devices, sign in with the same Google
+### First use
+Sign in at the library, open the app and click **Connect Google Drive**. That's it. On your other devices, sign in with the same Google
 account and everything shows up.
 
 Try it without Google: "Use on this device only" keeps everything (encrypted) in that browser only, which is
