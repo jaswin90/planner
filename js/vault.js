@@ -55,8 +55,16 @@ export class Vault extends EventTarget {
   async open() {
     let keyB64 = await idb.get(this.p + KEY);
     if (this.remote) {
-      const r = await this.remote.get(KEY);
-      if (r) {
+      let r;
+      try { r = await this.remote.get(KEY); }
+      catch (e) {
+        // Database unreachable but this device has a copy: open it; sync retries and shows the error.
+        if (!keyB64 || e.code === 'auth') throw e;
+        r = { local: true };
+      }
+      if (r && r.local) {
+        // keep this device's key
+      } else if (r) {
         const remoteKey = JSON.parse(new TextDecoder().decode(r.bytes)).k;
         if (remoteKey !== keyB64) await idb.del(this.p + DOC); // cache made with another key
         keyB64 = remoteKey;

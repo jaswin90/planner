@@ -38,11 +38,14 @@ export class CloudStore {
   ref(F, db, name, ...rest) { return F.doc(db, 'planner', this.uid, 'files', safeName(name), ...rest); }
 
   async call(fn) {
-    try { return await fn(); }
+    let timer;
+    const slow = new Promise((_, no) => { timer = setTimeout(() => no(new Error(
+      'The database did not answer within 45 seconds. Your network may be blocking firestore.googleapis.com; changes are kept on this device.')), 45_000); });
+    try { return await Promise.race([fn(), slow]); }
     catch (e) {
       if (e && (e.code === 'permission-denied' || e.code === 'unauthenticated')) throw authError('Not allowed: sign in at the library with an invited account.');
       throw e;
-    }
+    } finally { clearTimeout(timer); }
   }
 
   /** Returns { bytes: Uint8Array, version } or null. */
