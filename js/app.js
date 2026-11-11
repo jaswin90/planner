@@ -1,7 +1,8 @@
-// App boot: site account (shared with the library), Drive connection, header, routing.
+// App boot: site account (shared with the library), cloud sync, header, routing.
 
 import { h, icon, clear, toast } from './ui.js';
-import { getToken, userInfo, hasToken, signOutGoogle, DriveStore, siteAuth } from './google.js';
+import { CloudStore, siteAuth } from './cloud.js';
+import { idb } from './idb.js';
 import { Vault } from './vault.js';
 import { renderPlanner } from './planner.js';
 import { renderNotes, currentNoteEditor } from './notes.js';
@@ -66,17 +67,16 @@ async function welcome(error) {
   const sess = await siteSession();
   const local = h('button', { class: 'btn big' }, 'Use on this device only');
   local.addEventListener('click', busy(local, () => start({ id: 'local', email: '', name: 'This device', mode: 'local' })));
-  const offline = knownAccounts().filter((a) => a.mode === 'google');
+  const offline = knownAccounts().filter((a) => a.mode === 'cloud');
 
   let main;
   if (sess.configured && sess.user && sess.invited) {
-    const known = offline.find((a) => a.email === sess.user.email);
-    main = h('button', { class: 'btn primary big google' }, h('span', { class: 'g' }, 'G'), known ? `Continue as ${sess.user.email}` : 'Connect Google Drive');
-    main.addEventListener('click', busy(main, async () => {
-      await getToken({ interactive: true, hint: sess.user.email });
-      const u = await userInfo();
-      await start({ id: `g-${u.sub}`, email: u.email, name: u.name, mode: 'google' });
-    }));
+    main = h('button', { class: 'btn primary big' }, `Open my planner (${sess.user.email})`);
+    const u = sess.user;
+    const go = () => start({ id: `f-${u.uid}`, uid: u.uid, email: u.email, name: u.displayName || u.email, mode: 'cloud' });
+    main.addEventListener('click', busy(main, go));
+    // Signed in and invited: open straight away (the button stays as a fallback if something fails).
+    if (!error && !sessionStorage.getItem('planner.noauto')) setTimeout(() => main.click(), 0);
   } else if (sess.configured && sess.user) {
     main = h('div', { class: 'notice' }, h('strong', {}, 'Invite-only. '),
       `${sess.user.email} is not on the invite list yet. Ask Jaswin for an invite. You can still use the app on this device.`);
@@ -91,7 +91,7 @@ async function welcome(error) {
     h('p', { class: 'lead' }, 'Your notes and planner, on every device.'),
     error && h('p', { class: 'error' }, error),
     main,
-    sess.user && sess.invited && h('p', { class: 'muted small' }, `Signed in at the library as ${sess.user.email}. The first time, Google asks once to let the app use its private Drive folder.`),
+    sess.user && sess.invited && h('p', { class: 'muted small' }, `Signed in at the library as ${sess.user.email}.`),
     offline.length > 0 && h('div', { class: 'stack' }, h('p', { class: 'muted small' }, 'No internet? Open the copy saved on this device:'),
       offline.map((a) => {
         const b = h('button', { class: 'btn' }, `Open offline: ${a.email}`);
@@ -100,18 +100,37 @@ async function welcome(error) {
       })),
     local,
     h('ul', { class: 'points' },
-      h('li', {}, 'One account for the whole site: sign in at the library (invite-only), then connect Google Drive once.'),
-      h('li', {}, 'Your notes and plans sync through a private, hidden app folder in your own Drive. The app cannot see any of your other files.'),
-      h('li', {}, 'Files are stored encrypted. Turn on 2-Step Verification for your Google account: it is the key to your data.'),
+      h('li', {}, 'One account for the whole site: sign in at the library (invite-only). No Google Drive needed.'),
+      h('li', {}, 'Your notes, plans and files are encrypted in this browser before they are saved, and sync through the site\'s database, readable only by your account.'),
+      h('li', {}, 'Turn on 2-Step Verification for your Google account: it is the key to your data.'),
       h('li', {}, 'No server, no tracking, no ads.')),
   );
 }
 
+/**
+ * First time on cloud sync: bring along this browser's copy from the earlier Google Drive setup
+ * (same email), so nothing typed before is lost. The copy is re-encrypted nowhere: the same key
+ * and ciphertext move to the new account's slot, and the first sync uploads them.
+ */
+async function adoptEarlierCopy(account) {
+  const to = `acct:${account.id}:`;
+  if (await idb.get(to + 'planner-key.json')) return;
+  const prev = knownAccounts().find((a) => a.mode === 'google' && a.email === account.email);
+  if (!prev) return;
+  const from = `acct:${prev.id}:`;
+  for (const k of await idb.keys(from)) {
+    const v = await idb.get(k);
+    if (v !== undefined) await idb.set(to + k.slice(from.length), v);
+    if (k.slice(from.length).startsWith('blob:')) await idb.set(to + 'up:' + k.slice(from.length + 5), 1);
+  }
+}
+
 async function start(account) {
-  const remote = account.mode === 'google' ? new DriveStore() : null;
+  const remote = account.mode === 'cloud' && navigator.onLine ? new CloudStore(account.uid) : null;
+  if (account.mode === 'cloud') await adoptEarlierCopy(account).catch(() => {});
   vault = new Vault(account, remote);
-  if (remote && !hasToken()) vault.remote = null; // offline open: connect later
-  try { await vault.open(); } finally { if (remote) vault.remote = remote; }
+  await vault.open();
+  if (!remote && account.mode === 'cloud') vault.remote = null; // offline: changes stay on this device
   rememberAccount(account);
   enterApp();
 }
@@ -180,11 +199,11 @@ function drawStatus() {
 }
 
 async function onStatusClick() {
-  if (vault.status.state === 'auth' || (vault.account.mode === 'google' && !hasToken())) {
-    try { await getToken({ interactive: true, hint: vault.account.email }); const u = await userInfo();
-      if (`g-${u.sub}` !== vault.account.id) { await signOutGoogle(); toast('That is a different Google account. Please pick ' + vault.account.email, 'error', 6000); return; }
-    } catch (e) { toast(e.message, 'error'); return; }
+  if (vault.status.state === 'auth') {
+    const S = await siteAuth().catch(() => null);
+    if (S) { location.href = S.signInUrl(); return; }
   }
+  if (vault.account.mode === 'cloud' && !vault.remote && navigator.onLine) vault.remote = new CloudStore(vault.account.uid);
   if (vault.status.state === 'error') toast(vault.status.msg, 'error', 6000);
   vault.sync();
 }
@@ -193,16 +212,19 @@ async function signOut() {
   if (vault?.dek) {
     currentNoteEditor()?.editor.flush();
     await vault.saveLocal().catch(() => {});
-    if (vault.remote && hasToken()) await vault.sync();
+    if (vault.remote) await vault.sync();
     vault.lock();
   }
-  await signOutGoogle().catch(() => {});
+  try { sessionStorage.setItem('planner.noauto', '1'); } catch { /* ignore */ }
   location.hash = '';
   location.reload();
 }
 
 window.addEventListener('hashchange', () => { currentNoteEditor()?.editor.flush(); route(); });
-window.addEventListener('online', () => vault?.sync());
+window.addEventListener('online', () => {
+  if (vault?.account.mode === 'cloud' && !vault.remote) vault.remote = new CloudStore(vault.account.uid);
+  vault?.sync();
+});
 window.addEventListener('projectchange', () => { currentNoteEditor()?.editor.flush(); route(); });
 window.addEventListener('focus', () => vault?.dek && vault.sync());
 

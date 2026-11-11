@@ -33,10 +33,10 @@ export function renderSettings(root, vault, { onSignOut }) {
       } }, icon('plus'), 'Add project')),
 
     card('Account & sync',
-      h('p', {}, acct.mode === 'google' ? `Signed in as ${acct.email}. Encrypted data syncs to a private, hidden app folder in your Google Drive.` : 'This device only. Nothing is synced. Clearing your browser data deletes it.'),
+      h('p', {}, acct.mode === 'cloud' ? `Signed in as ${acct.email}. Encrypted data syncs through the site's database, readable only by your account.` : 'This device only. Nothing is synced. Clearing your browser data deletes it.'),
       h('p', { class: 'muted small' }, `Status: ${vault.status.msg || vault.status.state}`),
       h('div', { class: 'row wrap' },
-        acct.mode === 'google' && h('button', { class: 'btn', onclick: () => vault.sync() }, icon('sync'), 'Sync now'),
+        acct.mode === 'cloud' && h('button', { class: 'btn', onclick: () => vault.sync() }, icon('sync'), 'Sync now'),
         h('button', { class: 'btn', onclick: onSignOut }, 'Sign out'))),
 
     card('Backup',
@@ -48,11 +48,11 @@ export function renderSettings(root, vault, { onSignOut }) {
     card('Danger zone',
       h('div', { class: 'row wrap' },
         h('button', { class: 'btn', onclick: async () => {
-          if (!await confirmDialog('Remove the encrypted copy stored in this browser? Synced data on Google Drive stays.', { ok: 'Remove' })) return;
+          if (!await confirmDialog('Remove the encrypted copy stored in this browser? Synced data in the cloud stays.', { ok: 'Remove' })) return;
           await vault.forgetDevice(); location.reload();
         } }, 'Forget this device'),
         h('button', { class: 'btn danger', onclick: async () => {
-          if (!await confirmDialog(acct.mode === 'google' ? 'Permanently delete ALL your planner data from Google Drive and this device?' : 'Permanently delete ALL your planner data from this device?', { ok: 'Delete everything', danger: true, typeToConfirm: 'DELETE' })) return;
+          if (!await confirmDialog(acct.mode === 'cloud' ? 'Permanently delete ALL your planner data from the cloud and this device?' : 'Permanently delete ALL your planner data from this device?', { ok: 'Delete everything', danger: true, typeToConfirm: 'DELETE' })) return;
           try { await vault.destroyAll(); location.reload(); } catch (e) { toast(e.message, 'error'); }
         } }, icon('trash'), 'Delete all my data'))),
   ));

@@ -1,11 +1,11 @@
 // The vault: owns the key, the decrypted document, the local encrypted
-// cache (IndexedDB) and sync with Google Drive.
+// cache (IndexedDB) and sync with the site's cloud store (Firestore, see cloud.js).
 //
-// Storage layout (both local cache and Drive app folder):
+// Storage layout (both local cache and cloud store):
 //   planner-key.json  the account's random AES key (created on first sign-in)
 //   planner-data.bin  AES-GCM(document JSON), AAD "doc"
 //   att-<id>.bin      AES-GCM(file bytes),    AAD "att:<id>"
-// Your Google account protects the key; files at rest are ciphertext.
+// Your account protects the key; files at rest are ciphertext.
 
 import * as C from './crypto.js';
 import { idb } from './idb.js';
@@ -24,7 +24,7 @@ function deviceId() {
 }
 
 export class Vault extends EventTarget {
-  /** account: { id, email, name, mode: 'google'|'local' }, remote: DriveStore|null */
+  /** account: { id, uid, email, name, mode: 'cloud'|'local' }, remote: CloudStore|null */
   constructor(account, remote) {
     super();
     this.account = account;
@@ -49,7 +49,7 @@ export class Vault extends EventTarget {
   get online() { return !!this.remote && navigator.onLine; }
 
   /**
-   * Get the account key (Drive copy wins, so every device uses the same one),
+   * Get the account key (the cloud copy wins, so every device uses the same one),
    * creating it on first use, then load the local cached document.
    */
   async open() {
@@ -64,11 +64,11 @@ export class Vault extends EventTarget {
         keyB64 = C.newKeyB64();
         await this.remote.put(KEY, new TextEncoder().encode(JSON.stringify({ v: 2, k: keyB64 })), 'application/json');
       } else {
-        // Drive was emptied: re-upload this device's key so its data can sync back.
+        // The cloud store is empty: upload this device's key so its data can sync back.
         await this.remote.put(KEY, new TextEncoder().encode(JSON.stringify({ v: 2, k: keyB64 })), 'application/json');
       }
     } else if (!keyB64) {
-      if (this.account.mode === 'google') throw new Error('Nothing saved on this device yet. Sign in with Google while online first.');
+      if (this.account.mode === 'cloud') throw new Error('Nothing saved on this device yet. Open the planner once while online first.');
       keyB64 = C.newKeyB64();
     }
     await idb.set(this.p + KEY, keyB64);
@@ -239,7 +239,7 @@ export class Vault extends EventTarget {
     await idb.delPrefix(this.p);
   }
 
-  /** Delete everything, here and on Drive. */
+  /** Delete everything, here and in the cloud store. */
   async destroyAll() {
     if (this.remote) await this.remote.wipe();
     await this.forgetDevice();

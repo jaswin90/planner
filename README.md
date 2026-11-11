@@ -12,7 +12,7 @@ the old address `/planner/` forwards there).
   headings, lists, checklists, **tables**, **equations** (LaTeX), callouts, **photos**, **voice notes** (record in the
   browser), and **PDFs or any file** (PDFs preview inline). Search also finds file names.
 - **One login for the whole site.** Sign in once at `/library/` (invite-only; the same account as the books),
-  then click **Connect Google Drive** once. Files are stored encrypted in your own Drive, and your Google account is the key.
+  and the planner opens. Everything is encrypted in your browser before it is saved to the site's database (Firestore), where only your account can read it. No Google Drive needed.
 - Works offline. It saves on the device and syncs when you're back online. You can install it as an app
   ("Install" / "Add to Home screen").
 
@@ -29,11 +29,11 @@ There is nothing to set up in this repository and no key or client ID in it.
   publishes a redirect from `/planner/` to `/apps/planner/`.
 - **Sign-in.** The app uses the site-wide account module `/assets/js/site-auth.js` (Firebase Auth, invite-only).
   People sign in at `/library/`; the admin manages the invite list there. To reach Drive, the app asks Google
-  through that same account for the `drive.appdata` scope only. The Google side is set up once for the whole site
-  in the Firebase project (see the site repository's README); nobody needs to be added as a "test user".
+  through that same account, and stores its encrypted files in Firestore under `planner/<uid>/` (js/cloud.js).
+  Only that person can read or write them (rules in the site repository's `firestore.rules`).
 
 ### First use
-Sign in at the library, open the app and click **Connect Google Drive**. That's it. On your other devices, sign in with the same Google
+Sign in at the library and open the app. That's it. On your other devices, sign in with the same Google
 account and everything shows up.
 
 Try it without Google: "Use on this device only" keeps everything (encrypted) in that browser only, which is

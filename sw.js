@@ -1,9 +1,9 @@
 // Offline support: caches only this site's own files (the app shell).
 // Never caches Google API traffic or any user data.
-const VERSION = 'planner-v5';
+const VERSION = 'planner-v6';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'icon.svg', 'icon-192.png', 'apple-touch-icon.png', 'manifest.webmanifest',
-  'js/app.js', 'js/config.js', 'js/crypto.js', 'js/editor.js', 'js/google.js', 'js/idb.js',
+  'js/app.js', 'js/config.js', 'js/crypto.js', 'js/editor.js', 'js/cloud.js', 'js/idb.js',
   'js/model.js', 'js/notes.js', 'js/planner.js', 'js/sanitize.js', 'js/settings.js',
   'js/ui.js', 'js/vault.js', 'js/math.js', 'js/recorder.js', 'js/projects.js', 'vendor/katex/katex.min.js',
   // The site-wide account module lives outside the app folder (served by jaswin90.github.io).

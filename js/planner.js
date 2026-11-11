@@ -54,7 +54,7 @@ export function renderPlanner(root, vault) {
       h('div', { class: 'st-title' }, t.title || 'Untitled'),
       h('div', { class: 'st-meta' },
         p && h('span', { class: 'ptag pdot' }, p.name),
-        t.date && h('span', {}, icon('calendar'), shortDate(t.date) + (t.time ? ` ${t.time}` : '')),
+        t.date && h('span', {}, icon('calendar'), shortDate(t.date) + (t.time ? ` ${rangeLabel(t)}` : '')),
         t.due && h('span', { class: isOverdue(t) ? 'overdue' : '' }, `due ${shortDate(t.due)}`),
         (t.attachments || []).length > 0 && h('span', {}, icon('clip'), String(t.attachments.length))));
     dragSource(el, t.id);
@@ -113,20 +113,97 @@ export function renderPlanner(root, vault) {
       h('div', { class: 'dv-slot' }, untimed.map((t) => chip(t, true)),
         h('button', { class: 'add-inline', onclick: () => addOn(state.day) }, icon('plus'), 'Add')));
     dropTarget(allDay, (id) => { const t = vault.get(id); vault.update(id, { date: state.day, time: null, status: t.status === 'backlog' ? 'todo' : t.status }); rerender(); });
-    const hours = [];
-    for (let hr = 0; hr < 24; hr++) {
+    body = h('div', { class: 'dayview' }, allDay, timeline(list),
+      h('p', { class: 'muted small' }, 'Drag a sticky onto the timeline to plan it; drag a block to move it, or its bottom edge to change how long it takes. Double-click to add a task.'));
+  }
+
+  /** Day timeline: each timed task is a block from its start to its end, positioned by minute. */
+  function timeline(list) {
+    const timed = list.filter((t) => t.time).sort(sortTasks);
+    const firstH = Math.min(6, ...timed.map((t) => Math.floor(toMin(t.time) / 60)));
+    const base = firstH * 60;
+    const grid = h('div', { class: 'dv-grid', vars: { '--rows': String(24 - firstH), '--hour': HOUR_PX + 'px' } });
+    for (let hr = firstH; hr < 24; hr++) {
       const hh = String(hr).padStart(2, '0');
-      const inHour = list.filter((t) => t.time && t.time.slice(0, 2) === hh);
-      if (hr < 6 && !inHour.length) continue; // early hours only when used
-      const row = h('div', { class: 'dv-hour', dataset: { hour: hh } },
-        h('div', { class: 'dv-label' }, `${hh}:00`),
-        h('div', { class: 'dv-slot' }, inHour.map((t) => chip(t, true))));
-      row.querySelector('.dv-slot').addEventListener('dblclick', () => addOn(state.day, `${hh}:00`));
-      dropTarget(row, (id) => { const t = vault.get(id); vault.update(id, { date: state.day, time: `${hh}:00`, status: t.status === 'backlog' ? 'todo' : t.status }); rerender(); });
-      hours.push(row);
+      grid.append(h('div', { class: 'dv-hour', dataset: { hour: hh } }, h('div', { class: 'dv-label' }, `${hh}:00`)));
     }
-    body = h('div', { class: 'dayview' }, allDay, h('div', { class: 'dv-hours' }, hours),
-      h('p', { class: 'muted small' }, 'Drag stickies onto an hour, or double-click an hour to add a task there.'));
+    const minuteAt = (clientY) => {
+      const r = grid.getBoundingClientRect();
+      return base + Math.round((clientY - r.top) / PXM / SNAP) * SNAP;
+    };
+    grid.addEventListener('dblclick', (e) => { if (!e.target.closest('.dv-event')) addOn(state.day, fromMin(Math.floor(minuteAt(e.clientY) / 60) * 60)); });
+    // Dropping a sticky or a block anywhere on the timeline plans it at that quarter hour.
+    grid.addEventListener('dragover', (e) => { if (e.dataTransfer.types.includes('text/x-planner-task')) { e.preventDefault(); grid.classList.add('over'); } });
+    grid.addEventListener('dragleave', (e) => { if (!grid.contains(e.relatedTarget)) grid.classList.remove('over'); });
+    grid.addEventListener('drop', (e) => {
+      grid.classList.remove('over');
+      const id = e.dataTransfer.getData('text/x-planner-task');
+      if (!id) return;
+      e.preventDefault(); e.stopPropagation();
+      const t = vault.get(id);
+      const offset = Number(e.dataTransfer.getData('text/x-planner-offset') || 0);
+      const m = Math.max(0, Math.min(24 * 60 - SNAP, minuteAt(e.clientY - offset)));
+      vault.update(id, { date: state.day, time: fromMin(m), status: t.status === 'backlog' ? 'todo' : t.status });
+      rerender();
+    });
+
+    // Lay out overlapping blocks side by side: a column for each block within a cluster.
+    const cols = []; let cluster = []; let clusterEnd = -1;
+    const flush = () => { const n = Math.max(1, ...cluster.map((c) => c.col + 1)); for (const c of cluster) c.n = n; cluster = []; };
+    for (const t of timed) {
+      const s0 = toMin(t.time), e0 = endOf(t);
+      if (s0 >= clusterEnd) { flush(); clusterEnd = -1; }
+      const used = new Set(cluster.filter((c) => c.end > s0).map((c) => c.col));
+      let col = 0; while (used.has(col)) col++;
+      const c = { t, start: s0, end: e0, col, n: 1 };
+      cluster.push(c); cols.push(c); clusterEnd = Math.max(clusterEnd, e0);
+    }
+    flush();
+    const layer = h('div', { class: 'dv-events' }, cols.map((c) => block(c)));
+    grid.append(layer);
+    return grid;
+
+    function block({ t, start, end, col, n }) {
+      const p = t.projectId && vault.get(t.projectId);
+      const label = h('span', { class: 'ev-time' }, rangeLabel(t));
+      const el = h('div', {
+        class: `dv-event st-${sectionOf(t)}${t.status === 'done' ? ' done' : ''}`, draggable: 'true', tabindex: '0', role: 'button',
+        dataset: { id: t.id }, title: `${t.title || 'Untitled'} (${rangeLabel(t)})`,
+        vars: { '--top': (start - base) * PXM + 'px', '--h': Math.max(SNAP, end - start) * PXM + 'px', '--col': String(col), '--n': String(n), ...(p ? { '--pc': p.color } : {}) },
+      }, h('span', { class: 'ev-title' }, t.title || 'Untitled'), label, p && h('span', { class: 'pdot' }, p.name));
+      const handle = h('div', { class: 'ev-resize', title: 'Drag to change how long it takes', 'aria-hidden': 'true' });
+      el.append(handle);
+      el.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/x-planner-task', t.id);
+        e.dataTransfer.setData('text/x-planner-offset', String(e.clientY - el.getBoundingClientRect().top));
+        e.dataTransfer.effectAllowed = 'move'; el.classList.add('dragging');
+      });
+      el.addEventListener('dragend', () => el.classList.remove('dragging'));
+      let resized = false;
+      el.addEventListener('click', (e) => { e.stopPropagation(); if (resized) { resized = false; return; } openTask(vault, t.id, rerender); });
+      el.addEventListener('keydown', (e) => { if (e.key === 'Enter') openTask(vault, t.id, rerender); });
+      // Resize: drag the bottom edge; snaps to 15 minutes; never shorter than 15 or past midnight.
+      handle.addEventListener('mousedown', (e) => e.stopPropagation());
+      handle.addEventListener('pointerdown', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        el.draggable = false; handle.setPointerCapture(e.pointerId); el.classList.add('resizing');
+        const top = el.getBoundingClientRect().top;
+        let dur = end - start;
+        const move = (ev) => {
+          dur = Math.max(SNAP, Math.min(24 * 60 - start, Math.round((ev.clientY - top) / PXM / SNAP) * SNAP));
+          el.style.setProperty('--h', dur * PXM + 'px');
+          label.textContent = `${t.time}–${endLabel(start + dur)}`;
+        };
+        const up = () => {
+          handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', up); handle.removeEventListener('pointercancel', up);
+          el.classList.remove('resizing'); el.draggable = true; resized = true;
+          setTimeout(() => { resized = false; }, 300);
+          if (dur !== end - start) { vault.update(t.id, { dur }); rerender(); }
+        };
+        handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', up); handle.addEventListener('pointercancel', up);
+      });
+      return el;
+    }
   }
 
   function openDay(date) {
@@ -138,7 +215,7 @@ export function renderPlanner(root, vault) {
   function chip(t, long = false) {
     const p = t.projectId && vault.get(t.projectId);
     const el = h('button', { class: `chip st-${sectionOf(t)}${t.status === 'done' ? ' done' : ''}`, draggable: 'true', dataset: { id: t.id }, vars: p ? { '--pc': p.color } : {}, title: t.title },
-      t.time && h('span', { class: 'time' }, t.time), h('span', { class: 'ct' }, t.title || 'Untitled'),
+      t.time && h('span', { class: 'time' }, rangeLabel(t)), h('span', { class: 'ct' }, t.title || 'Untitled'),
       long && p && h('span', { class: 'pdot' }, p.name));
     dragSource(el, t.id);
     el.addEventListener('click', (e) => { e.stopPropagation(); openTask(vault, t.id, rerender); });
@@ -152,6 +229,16 @@ export function renderPlanner(root, vault) {
 
   root.append(h('div', { class: 'planner' }, side, h('main', { class: 'cal-wrap' }, nav, body)));
 }
+
+// ---- time ranges: a task with a time runs for `dur` minutes (default 60) ----
+const HOUR_PX = 48, PXM = HOUR_PX / 60, SNAP = 15;
+function toMin(hhmm) { return Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5)); }
+function fromMin(m) { m = Math.max(0, Math.min(24 * 60 - 1, Math.round(m))); return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); }
+function endLabel(m) { return m >= 24 * 60 ? '24:00' : fromMin(m); }
+export function durOf(t) { return Math.max(SNAP, Number(t.dur) || 60); }
+function endOf(t) { return Math.min(24 * 60, toMin(t.time) + durOf(t)); }
+function rangeLabel(t) { return t.time ? `${t.time}–${endLabel(endOf(t))}` : ''; }
+function fmtDur(m) { return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ' ' + (m % 60) + ' min' : ''}`; }
 
 function tiltOf(id) {
   return parseInt(id.slice(-2), 16) % 4;
@@ -217,6 +304,28 @@ export function openTask(vault, id, after, { isNew = false } = {}) {
   const band = h('div', { class: `sheet-band st-${sectionOf(t)}` });
   const recolor = () => { const cur = vault.get(id); if (cur) band.className = `sheet-band st-${sectionOf(cur)}`; };
   const field = (label, input) => h('label', { class: 'mfield' }, h('span', {}, label), input);
+  // Start and end time: the end sets how long the task takes (shown as a block of that length in Day view).
+  const durNote = h('span', {});
+  const startIn = h('input', { type: 'time', step: 900, value: t.time || '' });
+  const endIn = h('input', { type: 'time', step: 900, value: t.time ? endLabel(endOf(t)).replace('24:00', '23:59') : '', disabled: !t.time });
+  const showDur = () => { const cur = vault.get(id); durNote.textContent = cur && cur.time ? 'Takes ' + fmtDur(durOf(cur)) : 'Set a start time to give it a length'; };
+  startIn.addEventListener('change', () => {
+    const v = startIn.value || null;
+    save({ time: v });
+    endIn.disabled = !v;
+    const cur = vault.get(id);
+    endIn.value = v ? endLabel(endOf(cur)).replace('24:00', '23:59') : '';
+    showDur();
+  });
+  endIn.addEventListener('change', () => {
+    const cur = vault.get(id); if (!cur || !cur.time || !endIn.value) return;
+    let d = toMin(endIn.value) - toMin(cur.time);
+    if (endIn.value === '23:59') d += 1;
+    if (d < SNAP) { d = SNAP; endIn.value = endLabel(toMin(cur.time) + d); }
+    save({ dur: d });
+    showDur();
+  });
+  showDur();
   const statusSel = h('select', { 'aria-label': 'Status', onchange: (e) => { save({ status: e.target.value }); recolor(); } },
     [['todo', 'To do'], ['doing', 'Doing'], ['done', 'Done'], ['backlog', 'Backlog']].map(([v, l]) => h('option', { value: v, selected: t.status === v }, l)));
   const dlg = h('dialog', { class: 'sheet', 'aria-label': 'To-do' },
@@ -238,7 +347,9 @@ export function openTask(vault, id, after, { isNew = false } = {}) {
           field('Status', statusSel),
           field('Project', projectSelect(vault, t.projectId, (v) => save({ projectId: v }))),
           field('Planned for', h('input', { type: 'date', value: t.date || '', onchange: (e) => { save({ date: e.target.value || null }); recolor(); } })),
-          field('Time', h('input', { type: 'time', value: t.time || '', onchange: (e) => save({ time: e.target.value || null }) })),
+          field('Starts', startIn),
+          field('Ends', endIn),
+          h('span', { class: 'mfield dur-note muted small' }, durNote),
           field('Due', h('input', { type: 'date', value: t.due || '', onchange: (e) => save({ due: e.target.value || null }) }))),
         editor.el,
         h('h3', { class: 'small-h' }, 'All attachments in this to-do'),

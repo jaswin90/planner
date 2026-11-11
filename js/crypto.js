@@ -1,7 +1,7 @@
 // File encryption (WebCrypto, AES-256-GCM).
 //
 // One random 256-bit key per account, created automatically on first
-// sign-in and kept in the account's private Drive app folder (and cached
+// sign-in and kept in the account's private cloud store (and cached
 // in this browser). No passphrase: your Google account is the lock.
 //
 // Blob format: [1 byte version=1][12 byte IV][ciphertext+tag]
