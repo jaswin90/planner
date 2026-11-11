@@ -2,6 +2,8 @@
 
 import { h, icon, clear, toast } from './ui.js';
 import { CloudStore, siteAuth } from './cloud.js';
+import { renderHome } from './home.js';
+import { renderProjects } from './projectsview.js';
 import { idb } from './idb.js';
 import { Vault } from './vault.js';
 import { renderPlanner } from './planner.js';
@@ -143,7 +145,9 @@ function enterApp() {
   app.className = 'shell';
   statusPill = h('button', { class: 'status', onclick: onStatusClick }, icon('sync'), h('span', {}, ''));
   const nav = h('nav', { class: 'tabs' },
-    h('a', { href: '#/planner', dataset: { tab: 'planner' } }, icon('calendar'), h('span', {}, 'Planner')),
+    h('a', { href: '#/home', dataset: { tab: 'home' } }, icon('home'), h('span', {}, 'Home')),
+    h('a', { href: '#/planner', dataset: { tab: 'planner' } }, icon('calendar'), h('span', {}, 'Calendar')),
+    h('a', { href: '#/projects', dataset: { tab: 'projects' } }, icon('folder'), h('span', {}, 'Projects')),
     h('a', { href: '#/notes', dataset: { tab: 'notes' } }, icon('note'), h('span', {}, 'Notes')));
   view = h('div', { class: 'view' });
   ddSlot = h('div', { class: 'dd-slot' });
@@ -158,26 +162,32 @@ function enterApp() {
   vault.addEventListener('status', drawStatus);
   vault.addEventListener('change', refresh);
   drawStatus();
-  if (!location.hash || location.hash === '#') location.hash = '#/planner';
+  if (!location.hash || location.hash === '#') location.hash = '#/home';
   route();
   vault.sync();
   clearInterval(syncTimer);
   syncTimer = setInterval(() => { if (document.visibilityState === 'visible') vault?.sync(); }, 60_000);
 }
 
-function drawProjectDropdown() {
-  if (ddSlot && vault?.dek) clear(ddSlot).append(projectDropdown(vault));
+function drawProjectDropdown(name) {
+  if (!ddSlot || !vault?.dek) return;
+  clear(ddSlot);
+  // The project filter applies to Calendar and Notes; Home and Projects show everything.
+  if (name === 'planner' || name === 'notes') ddSlot.append(projectDropdown(vault));
 }
 
 function route() {
   if (!vault?.dek || !view) return;
-  drawProjectDropdown();
-  const [, name = 'planner', arg] = location.hash.split('/');
+  const [, name = 'home', arg] = location.hash.split('/');
+  drawProjectDropdown(name);
   for (const a of app.querySelectorAll('[data-tab]')) a.classList.toggle('on', a.dataset.tab === name);
   pendingRefresh = false;
+  view.dataset.view = name;
   if (name === 'notes') renderNotes(view, vault, { openId: arg || null });
   else if (name === 'settings') renderSettings(view, vault, { onSignOut: signOut });
-  else renderPlanner(view, vault);
+  else if (name === 'planner') renderPlanner(view, vault);
+  else if (name === 'projects') renderProjects(view, vault, { openId: arg || null });
+  else renderHome(view, vault);
 }
 
 /** Re-render after a sync brought in changes, without disturbing typing. */

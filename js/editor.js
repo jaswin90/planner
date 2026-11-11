@@ -3,15 +3,16 @@
 // file cards (PDF preview inline). Every attachment is encrypted by the
 // vault before it is stored anywhere.
 
-import { h, icon, toast, pickFiles, fmtSize, modal, promptDialog, confirmDialog, debounce } from './ui.js';
+import { h, icon, clear, toast, pickFiles, fmtSize, modal, promptDialog, confirmDialog, debounce } from './ui.js';
 import { sanitizeHtml, sanitizeToFragment } from './sanitize.js';
 import { renderTex, loadKatex } from './math.js';
 import { recordVoice } from './recorder.js';
 import { CONFIG } from './config.js';
+import { looksLikeMarkdown, markdownToHtml } from './markdown.js';
 
 const IMG_TYPES = /^image\/(png|jpeg|gif|webp|avif|bmp)$/;
 
-export function createEditor({ vault, html = '', ownerId, onChange, onAttachmentsChange, placeholder = 'Start writing…', compact = false }) {
+export function createEditor({ vault, html = '', ownerId, onChange, onAttachmentsChange, placeholder = "Start writing. Type '/' for blocks, or use Markdown: # heading, - list, [] to-do, **bold**", compact = false }) {
   const body = h('div', { class: 'rte', contenteditable: 'true', spellcheck: 'true', 'data-placeholder': placeholder, role: 'textbox', 'aria-multiline': 'true' });
   body.append(sanitizeToFragment(html));
   const changed = debounce(() => onChange?.(getHtml()), 400);
@@ -292,7 +293,7 @@ export function createEditor({ vault, html = '', ownerId, onChange, onAttachment
     const clone = body.cloneNode(true);
     for (const img of clone.querySelectorAll('img')) img.removeAttribute('src');
     for (const el of clone.querySelectorAll('.eq-block, span.eq, .voice, .filecard')) { el.textContent = ''; delete el.dataset.drawn; }
-    return sanitizeHtml(clone.innerHTML);
+    return sanitizeHtml(clone.innerHTML.replace(/\u200b/g, ''));
   }
 
   // ---------- events ----------
@@ -301,12 +302,29 @@ export function createEditor({ vault, html = '', ownerId, onChange, onAttachment
   for (const ev of ['keyup', 'mouseup', 'focus']) body.addEventListener(ev, updateTableBar);
   body.addEventListener('paste', async (e) => {
     const cd = e.clipboardData;
-    const files = Array.from(cd?.files || []);
+    if (!cd) return;
+    // Screenshots and copied images arrive as files (or as file items on some systems).
+    let files = Array.from(cd.files || []);
+    if (!files.length) files = Array.from(cd.items || []).filter((i) => i.kind === 'file').map((i) => i.getAsFile()).filter(Boolean);
     e.preventDefault();
-    if (files.length) { await insertFiles(files); return; }
+    if (files.length) {
+      const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ').replace(':', '.');
+      await insertFiles(files.map((f, i) => (!f.name || /^image\.\w+$/i.test(f.name)) && IMG_TYPES.test(f.type)
+        ? new File([f], `Screenshot ${stamp}${files.length > 1 ? ' ' + (i + 1) : ''}.${(f.type.split('/')[1] || 'png').replace('jpeg', 'jpg')}`, { type: f.type }) : f));
+      return;
+    }
     const html = cd.getData('text/html');
-    if (html) document.execCommand('insertHTML', false, sanitizeHtml(html).replace(/<img[^>]*>/g, '').replace(/<(div|span)[^>]*class="(eq-block|eq|voice|filecard)"[^>]*><\/\1>/g, ''));
-    else document.execCommand('insertText', false, cd.getData('text/plain'));
+    const text = cd.getData('text/plain');
+    if (caretEl()?.closest('pre, code')) document.execCommand('insertText', false, text);
+    else if (text && looksLikeMarkdown(text) && (!html || !/<(h[1-6]|ul|ol|table|strong|b|em|pre|blockquote)[\s>]/i.test(html))) {
+      document.execCommand('insertHTML', false, sanitizeHtml(markdownToHtml(text)));
+    } else if (html) document.execCommand('insertHTML', false, sanitizeHtml(html).replace(/<img[^>]*>/g, '').replace(/<(div|span)[^>]*class="(eq-block|eq|voice|filecard)"[^>]*><\/\1>/g, ''));
+    else document.execCommand('insertText', false, text);
+    // Browsers leave empty shells behind when blocks are pasted into a line; remove them.
+    const keep = caretBlock();
+    for (const el of body.querySelectorAll('p, blockquote, h1, h2, h3, h4')) {
+      if (el !== keep && !el.textContent.trim() && !el.querySelector('br, img, .eq, .eq-block, .voice, .filecard')) el.remove();
+    }
     hydrate();
     changed();
   });
@@ -348,8 +366,255 @@ export function createEditor({ vault, html = '', ownerId, onChange, onAttachment
     }
     if (e.key === 'Enter') setTimeout(() => {
       const li = caretEl()?.closest('ul.checklist > li');
-      if (li && !li.dataset.checked) li.dataset.checked = 'false';
+      if (li && (!li.dataset.checked || !li.textContent.trim())) li.dataset.checked = 'false';
     });
+  });
+
+  // ---------- Notion-style typing: Markdown shortcuts and the "/" menu ----------
+  try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch { /* old browsers */ }
+
+  /** The block the caret is in (a paragraph, heading, list item, cell…), or the editor itself. */
+  function caretBlock() {
+    const el = caretEl();
+    const b = el?.closest('p, div, h1, h2, h3, h4, li, blockquote, pre, td, th');
+    return b && body.contains(b) && b !== body ? b : body;
+  }
+  function rangeToCaret(block) {
+    const s = window.getSelection();
+    const r = document.createRange();
+    r.setStart(block, 0); r.setEnd(s.anchorNode, s.anchorOffset);
+    return r;
+  }
+  function rangeFromCaret(block) {
+    const s = window.getSelection();
+    const r = document.createRange();
+    r.setStart(s.anchorNode, s.anchorOffset); r.setEnd(block, block.childNodes.length);
+    return r;
+  }
+  function caretInto(node, atEnd = false) {
+    const r = document.createRange();
+    r.selectNodeContents(node); r.collapse(!atEnd);
+    const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+  }
+  function caretAt(node, offset) {
+    const r = document.createRange(); r.setStart(node, offset); r.collapse(true);
+    const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+  }
+  /** Replace a paragraph by a one-item list holding its content (no merging with lists around it). */
+  function makeList(kind, b) {
+    const li = h('li');
+    while (b.firstChild) li.append(b.firstChild);
+    if (!li.textContent && !li.querySelector('br')) li.append(h('br'));
+    const todo = kind === 'todo' || kind === 'done';
+    if (todo) li.dataset.checked = kind === 'done' ? 'true' : 'false';
+    b.replaceWith(h(kind === 'ol' ? 'ol' : 'ul', todo ? { class: 'checklist' } : {}, li));
+    caretInto(li);
+  }
+  const plainBlock = (b) => b === body || b.nodeName === 'P' || /^H[1-4]$/.test(b.nodeName) || (b.nodeName === 'DIV' && !b.className);
+
+  /** Turn the caret's block into another kind (used by Markdown shortcuts and the "/" menu). */
+  function setBlock(kind) {
+    switch (kind) {
+      case 'p': document.execCommand('formatBlock', false, 'P'); break;
+      case 'h1': case 'h2': case 'h3': document.execCommand('formatBlock', false, kind.toUpperCase()); break;
+      case 'quote': document.execCommand('formatBlock', false, 'BLOCKQUOTE'); break;
+      case 'code': {
+        document.execCommand('formatBlock', false, 'PRE');
+        const pre = caretEl()?.closest('pre');
+        if (pre) { const txt = pre.textContent.replace(/\n$/, ''); pre.textContent = txt + '\n'; caretAt(pre.firstChild, txt.length); }
+        break;
+      }
+      case 'ul': case 'ol': case 'todo': case 'done': {
+        const b = caretBlock();
+        if (b !== body && plainBlock(b)) { makeList(kind, b); break; }
+        if (kind === 'ul' || kind === 'ol') { document.execCommand(kind === 'ul' ? 'insertUnorderedList' : 'insertOrderedList', false, null); break; }
+        const li = caretEl()?.closest('li');
+        if (li && li.parentElement.nodeName === 'UL') { li.parentElement.classList.add('checklist'); for (const x of li.parentElement.children) if (!x.dataset.checked) x.dataset.checked = 'false'; }
+        else toggleChecklist();
+        const cur = caretEl()?.closest('li');
+        if (cur) cur.dataset.checked = kind === 'done' ? 'true' : 'false';
+        break;
+      }
+      case 'hr': {
+        const b = caretBlock();
+        const after = h('p', {}, h('br'));
+        if (b !== body && b.nodeName === 'P' && !b.textContent.trim()) b.replaceWith(h('hr'), after); else insertBlock(h('hr'));
+        if (after.isConnected) caretInto(after);
+        break;
+      }
+      default: run(kind); return; // table, equation, callout, image, attach, record
+    }
+    changed();
+  }
+
+  const BLOCK_MD = [[/^#$/, 'h1'], [/^##$/, 'h2'], [/^###$/, 'h3'], [/^[-*+]$/, 'ul'], [/^1[.)]$/, 'ol'],
+    [/^\[ ?\]$/, 'todo'], [/^\[[xX]\]$/, 'done'], [/^>$/, 'quote'], [/^```$/, 'code']];
+  const link = (m) => h('a', { href: m[3], target: '_blank', rel: 'noopener noreferrer nofollow' }, m[2]);
+  const INLINE_MD = [
+    [/()\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)$/, link],
+    [/()\*\*([^*\n]+)\*\*$/, (m) => h('strong', {}, m[2])],
+    [/()__([^_\n]+)__$/, (m) => h('strong', {}, m[2])],
+    [/()~~([^~\n]+)~~$/, (m) => h('s', {}, m[2])],
+    [/()==([^=\n]+)==$/, (m) => h('mark', {}, m[2])],
+    [/()`([^`\n]+)`$/, (m) => h('code', {}, m[2])],
+    [/(^|[^*\w])\*([^*\s](?:[^*\n]*[^*\s])?)\*$/, (m) => h('em', {}, m[2])],
+    [/(^|[^_\w])_([^_\s](?:[^_\n]*[^_\s])?)_$/, (m) => h('em', {}, m[2])],
+  ];
+  /** **bold**, *italic*, `code`, ~~strike~~, ==highlight== and [text](https://…) turn into formatting as you type. */
+  function inlineMarkdown(e) {
+    if (e.inputType !== 'insertText' || !e.data || !'*_`~=)'.includes(e.data.slice(-1))) return;
+    const s = window.getSelection();
+    const node = s.anchorNode;
+    if (!s.isCollapsed || !node || node.nodeType !== 3 || !body.contains(node) || node.parentElement.closest('pre, code')) return;
+    const off = s.anchorOffset;
+    const text = node.data.slice(0, off);
+    for (const [re, make] of INLINE_MD) {
+      const m = re.exec(text);
+      if (!m) continue;
+      const r = document.createRange();
+      r.setStart(node, m.index + m[1].length); r.setEnd(node, off);
+      r.deleteContents();
+      const zw = document.createTextNode('​'); // so typing continues outside the new formatting
+      r.insertNode(zw); r.insertNode(make(m));
+      const c = document.createRange(); c.setStart(zw, 1); c.collapse(true);
+      s.removeAllRanges(); s.addRange(c);
+      return;
+    }
+  }
+  /** "---" on its own line becomes a divider. */
+  function dividerShortcut() {
+    const b = caretBlock();
+    if (!plainBlock(b) || b.textContent !== '---' || b.querySelector('img,.eq,.eq-block')) return;
+    if (b === body) { document.execCommand('formatBlock', false, 'P'); return dividerShortcut(); }
+    const after = h('p', {}, h('br'));
+    b.replaceWith(h('hr'), after);
+    caretInto(after);
+  }
+
+  // The "/" menu: type / at the start of a line or after a space, then filter by typing.
+  const SLASH = [
+    ['p', 'Text', 'Plain paragraph', 'T'], ['h1', 'Heading 1', 'Large section heading', 'H1'], ['h2', 'Heading 2', 'Medium heading', 'H2'],
+    ['h3', 'Heading 3', 'Small heading', 'H3'], ['ul', 'Bulleted list', 'A simple list', '•'], ['ol', 'Numbered list', '1, 2, 3…', '1.'],
+    ['todo', 'To-do list', 'Checkboxes  [] ', '☑'], ['quote', 'Quote', 'Quotation  > ', '❝'], ['code', 'Code block', 'Monospace  ``` ', '</>'],
+    ['hr', 'Divider', 'Horizontal line  --- ', '—'], ['callout', 'Callout', 'Highlighted box', '💡'], ['table', 'Table', '3 × 3 grid', '⊞'],
+    ['equation', 'Equation', 'LaTeX formula', '∑'], ['image', 'Photo', 'Upload an image (or paste a screenshot)', '🖼'],
+    ['attach', 'File or PDF', 'Attach any file', '📎'], ['record', 'Voice note', 'Record audio', '🎤'],
+  ];
+  let slash = null; // { node, offset, menu, items, index }
+  function closeSlash() { slash?.menu.remove(); slash = null; }
+  function openSlash() {
+    const s = window.getSelection();
+    const node = s.anchorNode;
+    if (!node || node.nodeType !== 3) return;
+    const at = s.anchorOffset - 1;
+    if (node.data[at] !== '/' || (at > 0 && !/\s/.test(node.data[at - 1]))) return;
+    if (node.parentElement.closest('pre, code, td, th')) return;
+    closeSlash();
+    slash = { node, offset: at, menu: h('div', { class: 'slash-menu', role: 'listbox' }), items: [], index: 0 };
+    document.body.append(slash.menu);
+    drawSlash();
+  }
+  function slashQuery() {
+    const s = window.getSelection();
+    if (!slash || s.anchorNode !== slash.node || s.anchorOffset <= slash.offset || slash.node.data[slash.offset] !== '/') return null;
+    return slash.node.data.slice(slash.offset + 1, s.anchorOffset);
+  }
+  function drawSlash() {
+    const q = slashQuery();
+    if (q === null || q.length > 24 || /^\s/.test(q)) return closeSlash();
+    const words = q.toLowerCase();
+    slash.items = SLASH.filter(([k, l, d]) => !words || l.toLowerCase().includes(words) || k.startsWith(words) || d.toLowerCase().includes(words));
+    if (!slash.items.length) return closeSlash();
+    slash.index = Math.min(slash.index, slash.items.length - 1);
+    clear(slash.menu);
+    slash.menu.append(h('div', { class: 'slash-h' }, q ? `Blocks matching “${q}”` : 'Basic blocks'),
+      ...slash.items.map(([k, l, d, ic], i) => {
+        const b = h('button', { type: 'button', class: `slash-item${i === slash.index ? ' on' : ''}`, role: 'option', 'aria-selected': String(i === slash.index) },
+          h('span', { class: 'slash-ic' }, ic), h('span', { class: 'slash-t' }, h('b', {}, l), h('span', {}, d)));
+        b.addEventListener('mousedown', (e) => { e.preventDefault(); chooseSlash(k); });
+        return b;
+      }));
+    const r = window.getSelection().getRangeAt(0).getBoundingClientRect();
+    const w = 290, hgt = Math.min(360, slash.menu.scrollHeight);
+    const left = Math.max(8, Math.min(r.left, innerWidth - w - 8));
+    const below = r.bottom + 6 + hgt < innerHeight;
+    Object.assign(slash.menu.style, { left: left + 'px', top: (below ? r.bottom + 6 : Math.max(8, r.top - hgt - 6)) + 'px' });
+    slash.menu.querySelector('.on')?.scrollIntoView({ block: 'nearest' });
+  }
+  function chooseSlash(kind) {
+    const s = window.getSelection();
+    const { node, offset } = slash;
+    const end = s.anchorNode === node ? s.anchorOffset : offset + 1;
+    closeSlash();
+    const r = document.createRange(); r.setStart(node, offset); r.setEnd(node, end); r.deleteContents();
+    s.removeAllRanges(); s.addRange(r);
+    const b = caretBlock();
+    if (b !== body && !b.textContent && !b.querySelector('br,img')) b.append(h('br'));
+    if (b !== body && !b.textContent) caretInto(b);
+    setBlock(kind);
+  }
+
+  body.addEventListener('input', (e) => {
+    inlineMarkdown(e);
+    if (e.inputType === 'insertText' && e.data === '-') dividerShortcut();
+    if (e.inputType === 'insertText' && e.data === '/') openSlash();
+    else if (slash) drawSlash();
+  });
+  body.addEventListener('blur', () => setTimeout(closeSlash, 100));
+  body.addEventListener('keydown', (e) => {
+    if (slash) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        slash.index = (slash.index + (e.key === 'ArrowDown' ? 1 : -1) + slash.items.length) % slash.items.length;
+        drawSlash(); return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); e.stopImmediatePropagation(); chooseSlash(slash.items[slash.index][0]); return; }
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeSlash(); return; }
+    }
+    const s = window.getSelection();
+    if (!s.rangeCount || !s.isCollapsed || !body.contains(s.anchorNode) || e.ctrlKey || e.metaKey || e.altKey) return;
+    const b = caretBlock();
+    // "# ", "- ", "1. ", "[] ", "> ", "``` " at the start of a line.
+    if (e.key === ' ') {
+      const r = rangeToCaret(b);
+      const pre = r.toString();
+      if (pre.length > 3) return;
+      const hit = BLOCK_MD.find(([re]) => re.test(pre));
+      if (!hit) return;
+      const kind = hit[1];
+      const inList = b.nodeName === 'LI';
+      if (!(plainBlock(b) || (inList && (kind === 'todo' || kind === 'done')))) return;
+      e.preventDefault();
+      r.deleteContents();
+      if (b !== body && !b.textContent && !b.querySelector('br')) { b.append(h('br')); caretInto(b); }
+      setBlock(kind);
+      return;
+    }
+    // Backspace at the start of a heading, quote or code block turns it back into text.
+    if (e.key === 'Backspace' && /^(H[1-4]|BLOCKQUOTE|PRE)$/.test(b.nodeName) && rangeToCaret(b).toString() === '' && !rangeToCaret(b).cloneContents().querySelector('img,br')) {
+      e.preventDefault(); document.execCommand('formatBlock', false, 'P'); changed(); return;
+    }
+    // Code blocks: Enter adds a line; Enter on an empty last line leaves the block.
+    if (e.key === 'Enter' && !e.shiftKey && b.nodeName === 'PRE') {
+      e.preventDefault();
+      for (const br of b.querySelectorAll('br')) br.replaceWith('\n');
+      b.normalize();
+      const before = rangeToCaret(b).toString();
+      let full = b.textContent;
+      if (!full.endsWith('\n')) full += '\n'; // keeps the last line visible
+      const after = full.slice(before.length);
+      if (after === '\n' && (before === '' || before.endsWith('\n'))) {
+        b.textContent = before.replace(/\n$/, '') + '\n';
+        const next = h('p', {}, h('br'));
+        b.after(next); caretInto(next);
+      } else {
+        b.textContent = before + '\n' + after;
+        caretAt(b.firstChild, before.length + 1);
+      }
+      changed(); return;
+    }
+    // Tab / Shift+Tab indents list items.
+    if (e.key === 'Tab' && b.nodeName === 'LI') { e.preventDefault(); document.execCommand(e.shiftKey ? 'outdent' : 'indent', false, null); changed(); }
   });
 
   function imageMenu(img) {
@@ -365,12 +630,21 @@ export function createEditor({ vault, html = '', ownerId, onChange, onAttachment
       )), { wide: true });
   }
 
+  // Always type into paragraphs (so Markdown shortcuts and "/" work on the first line too).
+  const ensurePara = () => {
+    if (!body.firstChild || (body.childNodes.length === 1 && body.firstChild.nodeName === 'BR')) { body.textContent = ''; body.append(h('p', {}, h('br'))); }
+    else for (const n of Array.from(body.childNodes)) if (n.nodeType === 3 && n.data.trim()) { const p = h('p'); n.replaceWith(p); p.append(n); }
+    body.classList.toggle('empty', !body.textContent.trim() && !body.querySelector('img,hr,table,ul,ol,pre,blockquote,.eq-block,span.eq,.voice,.filecard,.callout,h1,h2,h3,h4'));
+  };
+  ensurePara();
+  body.addEventListener('input', ensurePara);
+  body.addEventListener('focus', ensurePara);
   hydrate();
   const el = h('div', { class: 'rte-wrap' }, bar, tableBar, body);
   return {
     el, bar, body, getHtml, hydrate, flush: () => changed.flush(), focus: () => body.focus(),
     addFiles: insertFiles,
-    setHtml(next) { body.textContent = ''; body.append(sanitizeToFragment(next)); hydrate(); },
+    setHtml(next) { body.textContent = ''; body.append(sanitizeToFragment(next)); ensurePara(); hydrate(); },
   };
 }
 

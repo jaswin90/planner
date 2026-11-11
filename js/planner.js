@@ -27,8 +27,20 @@ export function renderPlanner(root, vault) {
     root.querySelector('.quick input')?.focus();
   });
 
-  const side = h('aside', { class: 'side' },
-    h('div', { class: 'quick' }, quick),
+  const sideHidden = pref('side');
+  const toggleSide = (v) => { pref('side', v); rerender(); };
+  const side = sideHidden
+    ? h('aside', { class: 'side rail' },
+      h('button', { class: 'icon-btn', title: 'Show tasks', 'aria-label': 'Show tasks', onclick: () => toggleSide(false) }, icon('expand')),
+      SECTIONS.filter((s) => s.key !== 'done').map((s) => {
+        const n = tasks.filter((t) => sectionOf(t) === s.key).length;
+        const b = h('button', { class: `rail-sec st-${s.key}`, title: `${s.label}: ${n}`, 'aria-label': `${s.label}: ${n}`, onclick: () => { state.collapsed.delete(s.key); toggleSide(false); } }, String(n));
+        dropTarget(b, (id) => { vault.update(id, { unplanned: { status: 'todo', date: null }, doing: { status: 'doing' }, planned: { status: 'todo' }, backlog: { status: 'backlog' } }[s.key]); rerender(); });
+        return b;
+      }))
+    : h('aside', { class: 'side' },
+    h('div', { class: 'quick' }, quick,
+      h('button', { class: 'icon-btn side-hide', title: 'Hide tasks (more room for the calendar)', 'aria-label': 'Hide tasks', onclick: () => toggleSide(true) }, icon('collapse'))),
     SECTIONS.map((s) => {
       const list = tasks.filter((t) => sectionOf(t) === s.key).sort(sortTasks);
       const open = !state.collapsed.has(s.key);
@@ -227,7 +239,7 @@ export function renderPlanner(root, vault) {
     openTask(vault, t.id, rerender, { isNew: true });
   }
 
-  root.append(h('div', { class: 'planner' }, side, h('main', { class: 'cal-wrap' }, nav, body)));
+  root.append(h('div', { class: `planner${sideHidden ? ' side-hidden' : ''}` }, side, h('main', { class: 'cal-wrap' }, nav, body)));
 }
 
 // ---- time ranges: a task with a time runs for `dur` minutes (default 60) ----
@@ -239,6 +251,12 @@ export function durOf(t) { return Math.max(SNAP, Number(t.dur) || 60); }
 function endOf(t) { return Math.min(24 * 60, toMin(t.time) + durOf(t)); }
 function rangeLabel(t) { return t.time ? `${t.time}–${endLabel(endOf(t))}` : ''; }
 function fmtDur(m) { return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ' ' + (m % 60) + ' min' : ''}`; }
+
+function pref(k, v) {
+  const key = 'planner.pane.' + k;
+  try { if (v === undefined) return localStorage.getItem(key) === '1'; localStorage.setItem(key, v ? '1' : '0'); } catch { /* ignore */ }
+  return false;
+}
 
 function tiltOf(id) {
   return parseInt(id.slice(-2), 16) % 4;
@@ -295,7 +313,7 @@ export function openTask(vault, id, after, { isNew = false } = {}) {
     drawAtts();
   } })); };
   const editor = createEditor({
-    vault, html: t.html || '', ownerId: id, placeholder: 'Notes for this to-do: text, tables, equations, photos, voice notes, PDFs…',
+    vault, html: t.html || '', ownerId: id, placeholder: "Notes for this to-do. Type '/' for blocks, or use Markdown; paste screenshots straight in.",
     onChange: (html) => save({ html }),
     onAttachmentsChange: (aid) => { save({ attachments: [...(vault.get(id).attachments || []), aid] }); drawAtts(); },
   });
