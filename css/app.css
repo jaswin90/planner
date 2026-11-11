@@ -106,9 +106,9 @@ label.check { display: flex; gap: 8px; align-items: center; }
 .cal-nav { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
 .cal-nav h2 { margin: 0 0 0 8px; font-size: 19px; }
 .cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-auto-rows: minmax(108px, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; flex: 1; }
-.wd { background: var(--panel2); padding: 6px; font-size: 12px; font-weight: 600; color: var(--muted); text-align: center; min-height: 0; }
+.wd { background: var(--panel2); padding: 0 6px; line-height: 30px; white-space: nowrap; overflow: hidden; font-size: 12px; font-weight: 600; color: var(--muted); text-align: center; min-height: 0; }
 .cal > .wd { grid-row: 1; height: auto; }
-.cal { grid-template-rows: auto; }
+.cal { grid-template-rows: 30px; }   /* fixed header row: "auto" could collapse and clip the weekday names */
 .day { background: var(--panel); padding: 4px; display: flex; flex-direction: column; gap: 3px; min-width: 0; cursor: pointer; }
 .day.out { background: var(--panel2); } .day.out .dnum { color: var(--muted); }
 .day.today { background: var(--today); }
