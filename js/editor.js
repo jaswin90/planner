@@ -12,18 +12,13 @@ import { looksLikeMarkdown, markdownToHtml } from './markdown.js';
 
 const IMG_TYPES = /^image\/(png|jpeg|gif|webp|avif|bmp)$/;
 
-export function createEditor({ vault, html = '', ownerId, onChange, onAttachmentsChange, placeholder = "Start writing. Type '/' for blocks, or use Markdown: # heading, - list, [] to-do, **bold**", compact = false }) {
+export function createEditor({ vault, html = '', ownerId, onChange, onAttachmentsChange, placeholder = "Start writing. Type '/' for blocks, or use Markdown: # heading, * list, 1. numbered, [] to-do", compact = false, numbered = false, onNumbered }) {
   const body = h('div', { class: 'rte', contenteditable: 'true', spellcheck: 'true', 'data-placeholder': placeholder, role: 'textbox', 'aria-multiline': 'true' });
   body.append(sanitizeToFragment(html));
   const changed = debounce(() => onChange?.(getHtml()), 400);
   let savedRange = null;
 
   // ---------- toolbar ----------
-  const blockSel = h('select', { class: 'tb-select', 'aria-label': 'Text style' },
-    [['p', 'Normal text'], ['h1', 'Heading 1'], ['h2', 'Heading 2'], ['h3', 'Heading 3'], ['blockquote', 'Quote'], ['pre', 'Code block']].map(([v, l]) => h('option', { value: v }, l)));
-  blockSel.addEventListener('mousedown', () => { savedRange = saveSel(); });
-  blockSel.addEventListener('change', () => { restoreSel(savedRange); document.execCommand('formatBlock', false, blockSel.value.toUpperCase()); changed(); });
-
   const btn = (cmd, label, title, cls = '') => {
     const b = h('button', { type: 'button', class: `tb ${cls}`, title, 'aria-label': title, dataset: { cmd } }, label);
     b.addEventListener('mousedown', (e) => e.preventDefault()); // keep the caret where it is
@@ -32,13 +27,17 @@ export function createEditor({ vault, html = '', ownerId, onChange, onAttachment
   };
   const sep = () => h('span', { class: 'sep' });
   const bar = h('div', { class: `rte-bar${compact ? ' compact' : ''}`, role: 'toolbar' },
-    blockSel, sep(),
-    btn('bold', h('b', {}, 'B'), 'Bold (Ctrl+B)'), btn('italic', h('i', {}, 'I'), 'Italic (Ctrl+I)'), btn('underline', h('u', {}, 'U'), 'Underline (Ctrl+U)'),
-    btn('strikeThrough', h('s', {}, 'S'), 'Strikethrough'), btn('mark', h('span', { class: 'hl-swatch' }, 'A'), 'Highlight'), sep(),
-    btn('insertUnorderedList', '•≡', 'Bulleted list'), btn('insertOrderedList', '1.≡', 'Numbered list'), btn('checklist', '☑', 'Checklist'), btn('link', icon('link'), 'Link'), sep(),
+    h('div', { class: 'tb-group seg-blocks' },
+      btn('p', 'Text', 'Normal text'), btn('h1', 'H1', 'Heading (# then space)'), btn('h2', 'H2', 'Subheading (## then space)'), btn('h3', 'H3', 'Small heading (### then space)')),
+    btn('numheads', '1.1', 'Number the headings (1, 1.1, 1.2…)', 'numh'), sep(),
+    btn('bold', h('b', {}, 'B'), 'Bold (Ctrl+B or **text**)'), btn('italic', h('i', {}, 'I'), 'Italic (Ctrl+I or *text*)'), btn('underline', h('u', {}, 'U'), 'Underline (Ctrl+U)'),
+    btn('strikeThrough', h('s', {}, 'S'), 'Strikethrough (~~text~~)'), btn('mark', h('span', { class: 'hl-swatch' }, 'A'), 'Highlight (==text==)'), btn('code', '</>', 'Code block (``` then space)'), sep(),
+    btn('ul', '•≡', 'Bulleted list (* or - then space)'), btn('ol', '1.≡', 'Numbered list (1. then space)'), btn('todo', '☑', 'To-do list ([] then space)'),
+    btn('outdent', '⇤', 'Move list item out (Shift+Tab)'), btn('indent', '⇥', 'Indent list item: 1 → 1.1 (Tab)'), sep(),
+    btn('quote', '❝', 'Quote (> then space)'), btn('link', icon('link'), 'Link'), sep(),
     btn('table', ['⊞', h('span', { class: 'tb-l' }, 'Table')], 'Insert table', 'hl'),
     btn('equation', ['∑', h('span', { class: 'tb-l' }, 'Equation')], 'Insert equation', 'hl'),
-    btn('image', [icon('image'), h('span', { class: 'tb-l' }, 'Photo')], 'Insert photo', 'hl'),
+    btn('image', [icon('image'), h('span', { class: 'tb-l' }, 'Photo')], 'Insert photo (or paste a screenshot)', 'hl'),
     btn('record', [icon('mic'), h('span', { class: 'tb-l' }, 'Record')], 'Record a voice note', 'hl'),
     btn('attach', [icon('clip'), h('span', { class: 'tb-l' }, 'Attach')], 'Attach PDF or any file', 'hl'),
     btn('callout', ['💡', h('span', { class: 'tb-l' }, 'Callout')], 'Insert callout box', 'hl'), sep(),
@@ -57,6 +56,8 @@ export function createEditor({ vault, html = '', ownerId, onChange, onAttachment
     body.focus();
     switch (cmd) {
       case 'checklist': toggleChecklist(); break;
+      case 'p': case 'h1': case 'h2': case 'h3': case 'quote': case 'code': case 'ul': case 'ol': case 'todo': setBlock(cmd); break;
+      case 'numheads': setNumbered(!body.classList.contains('num-heads')); onNumbered?.(body.classList.contains('num-heads')); break;
       case 'mark': toggleMark(); break;
       case 'link': await addLink(); break;
       case 'table': insertTable(); break;
@@ -293,6 +294,8 @@ export function createEditor({ vault, html = '', ownerId, onChange, onAttachment
     const clone = body.cloneNode(true);
     for (const img of clone.querySelectorAll('img')) img.removeAttribute('src');
     for (const el of clone.querySelectorAll('.eq-block, span.eq, .voice, .filecard')) { el.textContent = ''; delete el.dataset.drawn; }
+    for (const el of clone.querySelectorAll('[data-num]')) delete el.dataset.num;
+    for (const el of clone.querySelectorAll('p')) if (!el.childNodes.length) el.remove();
     return sanitizeHtml(clone.innerHTML.replace(/\u200b/g, ''));
   }
 
@@ -413,13 +416,30 @@ export function createEditor({ vault, html = '', ownerId, onChange, onAttachment
   const plainBlock = (b) => b === body || b.nodeName === 'P' || /^H[1-4]$/.test(b.nodeName) || (b.nodeName === 'DIV' && !b.className);
 
   /** Turn the caret's block into another kind (used by Markdown shortcuts and the "/" menu). */
+  function placeAt(el, off) {
+    const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let n = w.nextNode(); n; n = w.nextNode()) { if (off <= n.data.length) return caretAt(n, off); off -= n.data.length; }
+    caretInto(el, true);
+  }
+  /** Change a paragraph/heading/quote into another of those, keeping its content and the caret. */
+  function retag(tag) {
+    const b = caretBlock();
+    if (b === body || !/^(P|H[1-4]|BLOCKQUOTE|PRE|DIV)$/.test(b.nodeName) || b.className) { document.execCommand('formatBlock', false, tag); return; }
+    if (b.nodeName === tag) return;
+    const off = rangeToCaret(b).toString().length;
+    const n = document.createElement(tag);
+    while (b.firstChild) n.append(b.firstChild);
+    if (!n.firstChild) n.append(h('br'));
+    b.replaceWith(n);
+    placeAt(n, off);
+  }
   function setBlock(kind) {
     switch (kind) {
-      case 'p': document.execCommand('formatBlock', false, 'P'); break;
-      case 'h1': case 'h2': case 'h3': document.execCommand('formatBlock', false, kind.toUpperCase()); break;
-      case 'quote': document.execCommand('formatBlock', false, 'BLOCKQUOTE'); break;
+      case 'p': retag('P'); break;
+      case 'h1': case 'h2': case 'h3': retag(kind.toUpperCase()); break;
+      case 'quote': retag('BLOCKQUOTE'); break;
       case 'code': {
-        document.execCommand('formatBlock', false, 'PRE');
+        retag('PRE');
         const pre = caretEl()?.closest('pre');
         if (pre) { const txt = pre.textContent.replace(/\n$/, ''); pre.textContent = txt + '\n'; caretAt(pre.firstChild, txt.length); }
         break;
@@ -592,7 +612,7 @@ export function createEditor({ vault, html = '', ownerId, onChange, onAttachment
     }
     // Backspace at the start of a heading, quote or code block turns it back into text.
     if (e.key === 'Backspace' && /^(H[1-4]|BLOCKQUOTE|PRE)$/.test(b.nodeName) && rangeToCaret(b).toString() === '' && !rangeToCaret(b).cloneContents().querySelector('img,br')) {
-      e.preventDefault(); document.execCommand('formatBlock', false, 'P'); changed(); return;
+      e.preventDefault(); retag('P'); changed(); return;
     }
     // Code blocks: Enter adds a line; Enter on an empty last line leaves the block.
     if (e.key === 'Enter' && !e.shiftKey && b.nodeName === 'PRE') {
@@ -629,6 +649,32 @@ export function createEditor({ vault, html = '', ownerId, onChange, onAttachment
         h('button', { class: 'btn danger', onclick: () => { img.remove(); changed(); m.close(); } }, icon('trash'), 'Remove from note'),
       )), { wide: true });
   }
+
+  // Numbered headings (per note): 1, 1.1, 1.1.1 from the top heading level used.
+  function renumber() {
+    const heads = body.querySelectorAll('h1, h2, h3, h4');
+    if (!body.classList.contains('num-heads')) { for (const x of heads) delete x.dataset.num; return; }
+    const base = Math.min(...Array.from(heads, (x) => +x.nodeName[1]));
+    const c = [0, 0, 0, 0];
+    for (const x of heads) {
+      const l = +x.nodeName[1] - base;
+      c[l]++; for (let k = l + 1; k < 4; k++) c[k] = 0;
+      x.dataset.num = c.slice(0, l + 1).map((v) => v || 1).join('.');
+    }
+  }
+  function setNumbered(on) { body.classList.toggle('num-heads', on); bar.querySelector('.numh')?.classList.toggle('on', on); renumber(); }
+  // Show which block style the caret is in.
+  function markActive() {
+    const b = caretEl() ? caretBlock() : null;
+    const tag = b && b !== body ? b.nodeName : '';
+    const li = caretEl()?.closest('li');
+    const kind = li ? (li.parentElement.classList.contains('checklist') ? 'todo' : li.parentElement.nodeName === 'OL' ? 'ol' : 'ul')
+      : ({ P: 'p', H1: 'h1', H2: 'h2', H3: 'h3', BLOCKQUOTE: 'quote', PRE: 'code' })[tag] || (b ? 'p' : '');
+    for (const x of bar.querySelectorAll('[data-cmd]')) if (['p', 'h1', 'h2', 'h3', 'quote', 'code', 'ul', 'ol', 'todo'].includes(x.dataset.cmd)) x.classList.toggle('on', x.dataset.cmd === kind);
+  }
+  for (const ev of ['keyup', 'mouseup', 'focus']) body.addEventListener(ev, markActive);
+  body.addEventListener('input', renumber);
+  setNumbered(numbered);
 
   // Always type into paragraphs (so Markdown shortcuts and "/" work on the first line too).
   const ensurePara = () => {

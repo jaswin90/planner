@@ -25,7 +25,7 @@ Browser ──(AES-GCM ciphertext only)──> Google Drive appDataFolder   (syn
 | `js/recorder.js` | Voice-note recording (MediaRecorder) |
 | `js/projects.js` | Project dropdown, project pickers, current-project filter |
 | `vendor/katex/` | KaTeX 0.16.11 (MIT), unmodified |
-| `js/home.js` | Home (landing): today, in progress, next 7 days, unplanned, projects, recent notes |
+| `js/home.js` | Projects overview (landing page, the Projects tab): today, in progress, next 7 days, unplanned, projects, recent notes |
 | `js/projectsview.js` | Projects: per-project board (To do / Doing / Backlog / Done, drag between columns) and notes |
 | `js/markdown.js` | Markdown → note HTML for pasting Markdown |
 | `js/planner.js` | Calendar: collapsible sticky sidebar, Day view, Month view, task dialog |

@@ -314,6 +314,7 @@ export function openTask(vault, id, after, { isNew = false } = {}) {
   } })); };
   const editor = createEditor({
     vault, html: t.html || '', ownerId: id, placeholder: "Notes for this to-do. Type '/' for blocks, or use Markdown; paste screenshots straight in.",
+    numbered: !!t.numHeads, onNumbered: (v) => save({ numHeads: v }),
     onChange: (html) => save({ html }),
     onAttachmentsChange: (aid) => { save({ attachments: [...(vault.get(id).attachments || []), aid] }); drawAtts(); },
   });

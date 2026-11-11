@@ -30,6 +30,7 @@ export function renderProjects(root, vault, { openId } = {}) {
     color ? h('span', { class: 'pdot-only', vars: { '--pc': color } }) : h('span', { class: 'pdot-only all' }),
     h('span', { class: 'grow' }, label), h('span', { class: 'cnt' }, String(count(pid))));
   const nav = h('aside', { class: 'n-nav pj-nav' },
+    h('a', { class: 'nav-it', href: '#/projects' }, icon('home'), h('span', { class: 'grow' }, 'Overview')),
     h('div', { class: 'nav-sec' }, 'Projects'),
     all.map((p) => navItem(p.id, p.name, p.color)),
     navItem(NONE, 'No project'),

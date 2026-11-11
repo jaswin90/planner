@@ -145,9 +145,8 @@ function enterApp() {
   app.className = 'shell';
   statusPill = h('button', { class: 'status', onclick: onStatusClick }, icon('sync'), h('span', {}, ''));
   const nav = h('nav', { class: 'tabs' },
-    h('a', { href: '#/home', dataset: { tab: 'home' } }, icon('home'), h('span', {}, 'Home')),
-    h('a', { href: '#/planner', dataset: { tab: 'planner' } }, icon('calendar'), h('span', {}, 'Calendar')),
     h('a', { href: '#/projects', dataset: { tab: 'projects' } }, icon('folder'), h('span', {}, 'Projects')),
+    h('a', { href: '#/planner', dataset: { tab: 'planner' } }, icon('calendar'), h('span', {}, 'Planner')),
     h('a', { href: '#/notes', dataset: { tab: 'notes' } }, icon('note'), h('span', {}, 'Notes')));
   view = h('div', { class: 'view' });
   ddSlot = h('div', { class: 'dd-slot' });
@@ -162,7 +161,7 @@ function enterApp() {
   vault.addEventListener('status', drawStatus);
   vault.addEventListener('change', refresh);
   drawStatus();
-  if (!location.hash || location.hash === '#') location.hash = '#/home';
+  if (!location.hash || location.hash === '#') location.hash = '#/projects';
   route();
   vault.sync();
   clearInterval(syncTimer);
@@ -178,7 +177,8 @@ function drawProjectDropdown(name) {
 
 function route() {
   if (!vault?.dek || !view) return;
-  const [, name = 'home', arg] = location.hash.split('/');
+  let [, name = 'projects', arg] = location.hash.split('/');
+  if (name === 'home') name = 'projects';
   drawProjectDropdown(name);
   for (const a of app.querySelectorAll('[data-tab]')) a.classList.toggle('on', a.dataset.tab === name);
   pendingRefresh = false;
@@ -186,8 +186,8 @@ function route() {
   if (name === 'notes') renderNotes(view, vault, { openId: arg || null });
   else if (name === 'settings') renderSettings(view, vault, { onSignOut: signOut });
   else if (name === 'planner') renderPlanner(view, vault);
-  else if (name === 'projects') renderProjects(view, vault, { openId: arg || null });
-  else renderHome(view, vault);
+  else if (name === 'projects' && arg) renderProjects(view, vault, { openId: arg });
+  else renderHome(view, vault); // Projects overview: all projects, today, next week, recent notes
 }
 
 /** Re-render after a sync brought in changes, without disturbing typing. */

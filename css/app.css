@@ -514,3 +514,37 @@ a.nav-it { text-decoration: none; color: inherit; }
   .trow { flex-wrap: wrap; row-gap: 2px; }
   .trow-m { flex-basis: 100%; justify-content: flex-start; padding-left: 30px; }
 }
+
+/* Notes typography: headings, numbered lists (1 → 1.1 → 1.1.1 with Tab), bullets (• ◦ ▪) */
+.rte h1 { font-size: 1.75em; line-height: 1.25; font-weight: 700; margin: 1.1em 0 .35em; }
+.rte h2 { font-size: 1.4em; line-height: 1.3; font-weight: 650; margin: 1em 0 .3em; padding-bottom: .15em; border-bottom: 1px solid var(--line); }
+.rte h3 { font-size: 1.15em; line-height: 1.35; font-weight: 650; margin: .9em 0 .25em; }
+.rte h4 { font-size: 1em; font-weight: 650; margin: .8em 0 .2em; color: var(--muted); }
+.rte > :first-child { margin-top: 0; }
+.rte [data-num]::before { content: attr(data-num) "\00a0\00a0"; color: var(--accent); font-variant-numeric: tabular-nums; }
+.rte ol { list-style: none; counter-reset: li; padding-left: 2.1em; margin: .35em 0; }
+.rte ol > li { counter-increment: li; position: relative; margin: .2em 0; }
+.rte ol > li::before { content: counters(li, ".") "."; position: absolute; right: 100%; margin-right: .45em; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--muted); font-weight: 500; }
+.rte ol ol { padding-left: 2.6em; } .rte ol ol ol { padding-left: 3.1em; }
+.rte ul:not(.checklist) { list-style: disc; padding-left: 1.6em; margin: .35em 0; }
+.rte ul:not(.checklist) ul:not(.checklist) { list-style: circle; }
+.rte ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) { list-style: square; }
+.rte ul:not(.checklist) > li { margin: .2em 0; }
+.rte li::marker { color: var(--muted); }
+.rte blockquote { border-left: 3px solid var(--accent); color: var(--text); background: color-mix(in srgb, var(--accent) 5%, transparent); padding: 6px 12px; border-radius: 0 6px 6px 0; }
+/* toolbar: block styles as a segmented control */
+.tb-group { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin-right: 2px; }
+.tb-group .tb { border-radius: 0; min-width: 38px; font-weight: 600; font-size: 13px; }
+.tb-group .tb + .tb { border-left: 1px solid var(--line); }
+.tb.on { background: color-mix(in srgb, var(--accent) 14%, var(--panel)); color: var(--accent); }
+.tb.numh { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+/* Projects overview (landing) */
+.home-projects { margin-bottom: 20px; }
+.hsec-h { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.hsec-h h2 { margin: 0; font-size: 18px; }
+.home-projects .pcards { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.home-projects .pcard { padding: 14px 16px; gap: 8px; border: 1px solid var(--line); border-top: 4px solid var(--pc); box-shadow: var(--shadow); }
+.pcard-h b { font-size: 16px; }
+.pcard-n { font-size: 22px; font-weight: 700; color: var(--pc); font-variant-numeric: tabular-nums; line-height: 1; }
+.pcard-new { align-items: center; justify-content: center; flex-direction: row !important; border: 2px dashed var(--line) !important; background: transparent !important; color: var(--muted); cursor: pointer; font: inherit; min-height: 110px; box-shadow: none !important; }
+.pcard-new:hover { color: var(--accent); border-color: var(--accent) !important; }

@@ -117,6 +117,7 @@ export function renderNotes(root, vault, { openId } = {}) {
     } }));
     const editor = createEditor({
       vault, html: n.html || '', ownerId: id,
+      numbered: !!n.numHeads, onNumbered: (v) => save({ numHeads: v }),
       onChange: (html) => { save({ html }); if (list) drawList(); edited.textContent = 'Saved'; },
       onAttachmentsChange: (aid) => { save({ attachments: [...(vault.get(id).attachments || []), aid] }); drawAtts(); if (list) drawList(); },
     });

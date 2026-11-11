@@ -66,15 +66,17 @@ export function renderHome(root, vault) {
     const pct = pt.length ? Math.round((100 * done) / pt.length) : 0;
     const next = pt.filter((t) => t.status !== 'done' && t.status !== 'backlog').sort(byTime)[0];
     return h('a', { class: 'pcard', href: `#/projects/${p.id}`, vars: { '--pc': p.color } },
-      h('div', { class: 'pcard-h' }, h('span', { class: 'pdot-only' }), h('b', {}, p.name)),
+      h('div', { class: 'pcard-h' }, h('span', { class: 'pdot-only' }), h('b', {}, p.name), h('span', { class: 'grow' }), h('span', { class: 'pcard-n' }, String(pt.length - done))),
+      h('div', { class: 'muted small' }, `open · ${done} done · ${notes.filter((n) => n.projectId === p.id).length} notes`),
       h('div', { class: 'pbar' }, h('span', { vars: { '--w': pct + '%' } })),
-      h('div', { class: 'muted small' }, `${pt.length - done} open · ${done} done · ${notes.filter((n) => n.projectId === p.id).length} notes`),
-      next && h('div', { class: 'pcard-next small' }, 'Next: ', next.title || 'Untitled'));
+      h('div', { class: 'pcard-next small' }, next ? ['Next: ', next.title || 'Untitled'] : 'No open tasks'));
   };
 
   const recent = notes.slice().sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5);
   const newNote = () => { const n = vault.put({ type: 'note', title: '', html: '', projectId: null, color: 'yellow', attachments: [] }); location.hash = `#/notes/${n.id}`; };
 
+  const addProject = async () => { const p = await newProject(vault); if (p) location.hash = `#/projects/${p.id}`; };
+  const noProj = tasks.filter((t) => !t.projectId || !vault.get(t.projectId));
   root.append(h('div', { class: 'home' },
     h('div', { class: 'home-head' },
       h('div', {},
@@ -82,18 +84,20 @@ export function renderHome(root, vault) {
         h('p', { class: 'muted' }, new Date().toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
           ' · ', `${todays.filter((t) => t.status !== 'done').length + overdue.length} to do today`)),
       h('div', { class: 'home-quick' }, quick)),
+    h('section', { class: 'home-projects' },
+      h('div', { class: 'hsec-h' }, h('h2', {}, 'Projects'), h('span', { class: 'grow' }),
+        noProj.length > 0 && h('a', { class: 'hlink', href: '#/projects/none' }, `Tasks without a project · ${noProj.filter((t) => t.status !== 'done').length}`, icon('right'))),
+      h('div', { class: 'pcards' }, projs.map(projCard),
+        h('button', { class: 'pcard pcard-new', onclick: addProject }, icon('plus'), projs.length ? 'New project' : 'Create your first project'))),
     h('div', { class: 'home-grid' },
       h('div', { class: 'hcol' },
-        card('Today', link('Open calendar', '#/planner'),
+        card('Today', link('Open planner', '#/planner'),
           overdue.length > 0 && h('div', { class: 'hgroup' }, h('div', { class: 'hgroup-h overdue' }, `Overdue · ${overdue.length}`), overdue.map((t) => row(t))),
-          todays.length ? todays.map((t) => row(t)) : !overdue.length && empty('Nothing planned for today. Add a task above, or drag one onto today in the calendar.')),
+          todays.length ? todays.map((t) => row(t)) : !overdue.length && empty('Nothing planned for today. Add a task above, or drag one onto today in the planner.')),
         card('In progress', null, doing.length ? doing.map((t) => row(t, { showDate: true })) : empty('Nothing in progress. Set a task to “Doing” to see it here.')),
-        card('Next 7 days', null, upcoming.length ? upcoming.slice(0, 12).map((t) => row(t, { showDate: true })) : empty('Nothing planned for the coming week.')),
-        inbox.length > 0 && card(`Not planned yet · ${inbox.length}`, link('Plan in calendar', '#/planner'), inbox.slice(0, 6).map((t) => row(t)))),
+        card('Next 7 days', null, upcoming.length ? upcoming.slice(0, 12).map((t) => row(t, { showDate: true })) : empty('Nothing planned for the coming week.'))),
       h('div', { class: 'hcol' },
-        card('Projects', h('button', { class: 'btn small', onclick: async () => { const p = await newProject(vault); if (p) location.hash = `#/projects/${p.id}`; } }, icon('plus'), 'New'),
-          projs.length ? h('div', { class: 'pcards' }, projs.map(projCard)) : empty('Group tasks and notes into projects (work, home, a trip…).'),
-          projs.length > 0 && link('All projects', '#/projects')),
+        inbox.length > 0 && card(`Not planned yet · ${inbox.length}`, link('Plan', '#/planner'), inbox.slice(0, 6).map((t) => row(t))),
         card('Recent notes', h('button', { class: 'btn small', onclick: newNote }, icon('plus'), 'New note'),
           recent.length ? h('div', { class: 'nlist' }, recent.map((n) => h('a', { class: 'nrow', href: `#/notes/${n.id}` },
             h('b', {}, n.title || 'Untitled'),
