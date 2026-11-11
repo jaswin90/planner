@@ -31,17 +31,23 @@ try {
   const page = await ctx.newPage();
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(String(e)));
+  // The site-wide files (/assets/…: account, theme) are served by jaswin90.github.io, not by this repository.
+  const missing = [];
+  page.on('response', (r) => { if (r.status() === 404) missing.push(new URL(r.url()).pathname); });
   await page.goto(`http://127.0.0.1:${PORT}/`);
-  await page.getByText('Google sign-in is not set up yet').waitFor();
+  await page.getByRole('button', { name: 'Use on this device only' }).waitFor();
   if (shots) await page.screenshot({ path: `${shots}/1-welcome.png` });
 
   // Straight into the app: no passphrase
   await page.getByRole('button', { name: 'Use on this device only' }).click();
   await page.locator('.top').waitFor();
 
-  // Only two tabs: Planner and Notes
+  // Three tabs, Projects first (the landing page)
   const tabs = await page.locator('nav.tabs a').allTextContents();
-  assert.deepEqual(tabs, ['Planner', 'Notes']);
+  assert.deepEqual(tabs, ['Projects', 'Planner', 'Notes']);
+  await page.locator('.home .home-projects').waitFor();
+  await page.locator('nav.tabs a', { hasText: 'Planner' }).click();
+  await page.locator('.cal-nav').waitFor();
   // Only Day and Month views
   assert.deepEqual(await page.locator('.seg button').allTextContents(), ['Day', 'Month']);
 
@@ -76,11 +82,11 @@ try {
   await page.locator('.dayview').waitFor();
   await page.locator('.dv-allday .chip', { hasText: 'Write report' }).waitFor();
   await page.locator('.sticky', { hasText: 'Call bank' }).dragTo(page.locator('.dv-hour[data-hour="10"]'));
-  await page.locator('.dv-hour[data-hour="10"] .chip', { hasText: 'Call bank' }).waitFor();
+  await page.locator('.dv-event', { hasText: 'Call bank' }).waitFor();
   if (shots) await page.screenshot({ path: `${shots}/3-day.png` });
 
   // Task dialog with notes
-  await page.locator('.dv-hour[data-hour="10"] .chip', { hasText: 'Call bank' }).click();
+  await page.locator('.dv-event', { hasText: 'Call bank' }).click();
   await page.locator('dialog .rte').click();
   await page.keyboard.type('Ask about the loan');
   await page.locator('dialog').getByRole('button', { name: 'Done', exact: true }).click();
@@ -106,7 +112,7 @@ try {
   // Checklist
   await page.locator('.n-note .rte').press('End');
   await page.keyboard.press('Enter');
-  await page.locator('.n-note .tb[data-cmd=checklist]').click();
+  await page.locator('.n-note .tb[data-cmd=todo]').click();
   await page.keyboard.type('Book hotel');
   await page.locator('.n-note ul.checklist li').waitFor();
 
@@ -224,7 +230,9 @@ try {
   assert.ok(overflow <= 1, `horizontal overflow ${overflow}px on phone`);
   if (shots) await page.screenshot({ path: `${shots}/5-phone.png` });
 
-  const bad = errors.filter((e) => !/favicon/.test(e));
+  const unexpected = missing.filter((u) => !u.startsWith('/assets/') && !/favicon/.test(u));
+  assert.deepEqual(unexpected, [], 'missing files');
+  const bad = errors.filter((e) => !/favicon/.test(e) && !(/status of 404/.test(e) && unexpected.length === 0));
   assert.deepEqual(bad, [], 'console errors');
   console.log('E2E OK');
 } catch (e) {
