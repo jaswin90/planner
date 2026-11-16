@@ -68,7 +68,32 @@ const ICONS = {
   menu: ['M4 6h16M4 12h16M4 18h16'],
   collapse: ['M11 17l-5-5 5-5M18 17l-5-5 5-5'],
   expand: ['M13 17l5-5-5-5M6 17l5-5-5-5'],
+  more: ['M5 12h.01M12 12h.01M19 12h.01'],
+  play: ['M8 5v14l11-7z'],
+  box: ['M4 7h16v4H4zM5 11v9h14v-9M10 15h4'],
+  undo: ['M9 14L4 9l5-5', 'M4 9h11a5 5 0 0 1 0 10h-3'],
+  clock: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2'],
 };
+
+/**
+ * Long-press (touch) or right-click (mouse) opens a menu. A click that ends a
+ * long-press is swallowed so it doesn't also open the item.
+ */
+export function longPress(el, fn) {
+  let timer, x = 0, y = 0, fired = false;
+  const cancel = () => clearTimeout(timer);
+  el.addEventListener('pointerdown', (e) => {
+    fired = false;
+    if (e.pointerType === 'mouse') return;
+    x = e.clientX; y = e.clientY; cancel();
+    timer = setTimeout(() => { fired = true; navigator.vibrate?.(10); fn(); }, 500);
+  });
+  el.addEventListener('pointermove', (e) => { if (Math.hypot(e.clientX - x, e.clientY - y) > 8) cancel(); });
+  el.addEventListener('pointerup', cancel);
+  el.addEventListener('pointercancel', cancel);
+  el.addEventListener('contextmenu', (e) => { e.preventDefault(); cancel(); if (!fired) { fired = true; fn(); } });
+  el.addEventListener('click', (e) => { if (fired) { fired = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
+}
 
 let toastBox;
 export function toast(msg, kind = 'info', ms = 3500) {

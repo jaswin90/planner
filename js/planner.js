@@ -2,7 +2,7 @@
 // into Unplanned / Doing / Planned / Backlog / Done. Drag a sticky onto a
 // day to plan it; drag it onto a section to change its state.
 
-import { h, icon, clear, confirmDialog } from './ui.js';
+import { h, icon, clear, confirmDialog, longPress, toast } from './ui.js';
 import { SECTIONS, sectionOf, liveItems, monthGrid, isoDate, htmlToText } from './model.js';
 import { createEditor, attachmentList } from './editor.js';
 import { currentProject, projectSelect } from './projects.js';
@@ -70,6 +70,7 @@ export function renderPlanner(root, vault) {
         t.due && h('span', { class: isOverdue(t) ? 'overdue' : '' }, `due ${shortDate(t.due)}`),
         (t.attachments || []).length > 0 && h('span', {}, icon('clip'), String(t.attachments.length))));
     dragSource(el, t.id);
+    withMenu(el, vault, t.id, rerender);
     el.addEventListener('click', () => openTask(vault, t.id, rerender));
     el.addEventListener('keydown', (e) => { if (e.key === 'Enter') openTask(vault, t.id, rerender); });
     return el;
@@ -187,6 +188,7 @@ export function renderPlanner(root, vault) {
       }, h('span', { class: 'ev-title' }, t.title || 'Untitled'), label, p && h('span', { class: 'pdot' }, p.name));
       const handle = h('div', { class: 'ev-resize', title: 'Drag to change how long it takes', 'aria-hidden': 'true' });
       el.append(handle);
+      withMenu(el, vault, t.id, rerender);
       el.addEventListener('dragstart', (e) => {
         e.dataTransfer.setData('text/x-planner-task', t.id);
         e.dataTransfer.setData('text/x-planner-offset', String(e.clientY - el.getBoundingClientRect().top));
@@ -232,6 +234,7 @@ export function renderPlanner(root, vault) {
       t.time && h('span', { class: 'time' }, rangeLabel(t)), h('span', { class: 'ct' }, t.title || 'Untitled'),
       long && p && h('span', { class: 'pdot' }, p.name));
     dragSource(el, t.id);
+    if (long) withMenu(el, vault, t.id, rerender); else longPress(el, () => taskMenu(vault, t.id, el, rerender));
     el.addEventListener('click', (e) => { e.stopPropagation(); openTask(vault, t.id, rerender); });
     return el;
   }
@@ -297,7 +300,71 @@ function dropTarget(el, onDrop) {
   });
 }
 
-/** Task editor dialog. Edits autosave. */
+/** Adds a ⋯ button (always visible on touch screens) plus long-press / right-click, opening taskMenu. */
+export function withMenu(el, vault, id, after) {
+  const b = h('span', { class: 'more-btn', role: 'button', tabindex: '0', title: 'More actions', 'aria-label': 'More actions', 'aria-haspopup': 'menu' }, icon('more'));
+  const open = (e) => { e.stopPropagation(); e.preventDefault(); taskMenu(vault, id, b, after); };
+  b.addEventListener('click', open);
+  b.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') open(e); });
+  b.addEventListener('pointerdown', (e) => e.stopPropagation());
+  el.append(b);
+  longPress(el, () => taskMenu(vault, id, el, after));
+  return el;
+}
+
+/**
+ * Quick actions for a task without drag and drop (phones): plan today / tomorrow,
+ * pick a date, change status, mark done, delete.
+ */
+export function taskMenu(vault, id, anchor, after) {
+  const t = vault.get(id);
+  if (!t) return;
+  document.querySelector('.tmenu-wrap')?.remove();
+  const today = isoDate(new Date());
+  const active = t.status === 'backlog' || t.status === 'done' ? 'todo' : t.status;
+  const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey, true); anchor?.focus?.(); };
+  const set = (patch, msg) => { close(); vault.update(id, patch); if (msg) toast(msg, 'ok', 2000); after?.(); };
+  const item = (ic, label, fn, cls = '') => h('button', { class: `tm-it${cls}`, role: 'menuitem', onclick: fn }, icon(ic), h('span', {}, label));
+  const isDone = t.status === 'done';
+  const menu = h('div', { class: 'tmenu', role: 'menu', 'aria-label': `Actions for ${t.title || 'Untitled'}` },
+    h('div', { class: 'tm-title' }, t.title || 'Untitled'),
+    item('check', isDone ? 'Mark not done' : 'Mark done', () => set({ status: isDone ? 'todo' : 'done' }, isDone ? '' : 'Done ✓'), ' tm-done'),
+    h('div', { class: 'tm-sep' }),
+    t.date !== today && item('calendar', 'Today', () => set({ date: today, status: active }, 'Planned for today')),
+    item('right', 'Tomorrow', () => set({ date: addDays(today, 1), status: active }, 'Planned for tomorrow')),
+    item('clock', 'Pick date & time…', () => { close(); openTask(vault, id, after); }),
+    t.date && item('undo', 'Unschedule', () => set({ date: null, time: null })),
+    h('div', { class: 'tm-sep' }),
+    t.status !== 'doing' && item('play', 'Doing', () => set({ status: 'doing' })),
+    t.status !== 'todo' && item('note', 'To do', () => set({ status: 'todo' })),
+    t.status !== 'backlog' && item('box', 'Backlog', () => set({ status: 'backlog' })),
+    h('div', { class: 'tm-sep' }),
+    item('trash', 'Delete', async () => {
+      close();
+      if (await confirmDialog(`Delete "${t.title || 'Untitled'}"?`, { ok: 'Delete', danger: true })) { vault.remove(id); after?.(); }
+    }, ' danger'));
+  const wrap = h('div', { class: 'tmenu-wrap' }, h('div', { class: 'tmenu-back', onclick: close }), menu);
+  const onKey = (e) => {
+    const items = [...menu.querySelectorAll('.tm-it')];
+    const i = items.indexOf(document.activeElement);
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+    else if (e.key === 'Tab') { e.preventDefault(); }
+  };
+  document.addEventListener('keydown', onKey, true);
+  (document.querySelector('dialog[open]') || document.body).append(wrap);
+  // Desktop: next to the item. Phones: a sheet from the bottom (CSS).
+  if (anchor && !window.matchMedia('(max-width: 760px)').matches) {
+    const r = anchor.getBoundingClientRect(), m = menu.getBoundingClientRect();
+    const left = Math.max(8, Math.min(innerWidth - m.width - 8, r.right - m.width));
+    const top = r.bottom + 4 + m.height > innerHeight - 8 ? Math.max(8, r.top - m.height - 4) : r.bottom + 4;
+    menu.style.setProperty('--x', left + 'px'); menu.style.setProperty('--y', top + 'px');
+    menu.classList.add('at');
+  }
+  menu.querySelector('.tm-it')?.focus();
+}
+
 /**
  * To-do details: opens as a full-height panel styled exactly like a note
  * (same toolbar, title, editor and attachments). Edits autosave.
@@ -347,7 +414,21 @@ export function openTask(vault, id, after, { isNew = false } = {}) {
     showDur();
   });
   showDur();
-  const statusSel = h('select', { 'aria-label': 'Status', onchange: (e) => { save({ status: e.target.value }); recolor(); } },
+  const doneBtn = h('button', { class: 'btn small mark-done' });
+  const drawDone = () => {
+    const d = vault.get(id)?.status === 'done';
+    clear(doneBtn).append(icon(d ? 'undo' : 'check'), d ? 'Undo done' : 'Mark done');
+    doneBtn.classList.toggle('is-done', d);
+    doneBtn.title = d ? 'Set back to To do' : 'Mark this to-do done and close';
+  };
+  doneBtn.addEventListener('click', () => {
+    const d = vault.get(id)?.status === 'done';
+    save({ status: d ? 'todo' : 'done' });
+    statusSel.value = d ? 'todo' : 'done';
+    recolor(); drawDone();
+    if (!d) { toast('Done ✓', 'ok', 2000); dlg.close(); }
+  });
+  const statusSel = h('select', { 'aria-label': 'Status', onchange: (e) => { save({ status: e.target.value }); recolor(); drawDone(); } },
     [['todo', 'To do'], ['doing', 'Doing'], ['done', 'Done'], ['backlog', 'Backlog']].map(([v, l]) => h('option', { value: v, selected: t.status === v }, l)));
   const dlg = h('dialog', { class: 'sheet', 'aria-label': 'To-do' },
     band,
@@ -358,8 +439,8 @@ export function openTask(vault, id, after, { isNew = false } = {}) {
       h('button', { class: 'icon-btn', title: 'Delete to-do', 'aria-label': 'Delete to-do', onclick: async () => {
         if (await confirmDialog('Delete this to-do with its notes and attachments?', { ok: 'Delete', danger: true })) { vault.remove(id); dlg.close(); }
       } }, icon('trash')),
-      h('button', { class: 'btn primary small', onclick: () => dlg.close() }, 'Done'),
-      h('button', { class: 'icon-btn', title: 'Close', 'aria-label': 'Close', onclick: () => dlg.close() }, icon('close'))),
+      doneBtn,
+      h('button', { class: 'icon-btn', title: 'Save and close', 'aria-label': 'Save and close', onclick: () => dlg.close() }, icon('close'))),
     editor.bar,
     h('div', { class: 'n-scroll' },
       h('div', { class: 'n-doc' },
@@ -384,6 +465,7 @@ export function openTask(vault, id, after, { isNew = false } = {}) {
     if (cur && !(cur.title || '').trim() && !htmlToText(cur.html) && !(cur.attachments || []).length) vault.remove(id);
     after?.();
   });
+  drawDone();
   document.body.append(dlg);
   dlg.showModal();
   (isNew ? titleIn : editor.body).focus();

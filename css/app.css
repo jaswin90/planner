@@ -561,3 +561,39 @@ dialog.sheet .sheet-top { padding-left: max(16px, env(safe-area-inset-left)); pa
   .sheet-top .icon-btn { width: 44px; height: 44px; }
   .sheet-top .btn.primary { min-height: 40px; padding: 0 16px; }
 }
+
+/* Task quick menu (⋯ / long-press / right-click) */
+.more-btn { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 7px; color: var(--muted); cursor: pointer; flex: none; opacity: 0; transition: opacity .12s; }
+.more-btn:hover, .more-btn:focus-visible { background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--text); }
+:is(.sticky, .trow, .bcard, .dv-event, .chip):is(:hover, :focus-within) .more-btn { opacity: 1; }
+@media (hover: none) { .more-btn { opacity: .75; width: 36px; height: 36px; } }
+.sticky .more-btn, .bcard .more-btn { position: absolute; top: 4px; right: 4px; }
+.bcard { position: relative; } .bcard-t { padding-right: 26px; }
+.sticky .st-title { padding-right: 24px; }
+.dv-event .more-btn { position: absolute; top: 0; right: 0; width: 24px; height: 24px; }
+.dv-slot .chip .more-btn { margin-left: auto; width: 24px; height: 24px; }
+.sticky, .trow, .bcard, .dv-event, .chip { -webkit-touch-callout: none; }
+.tmenu-wrap { position: fixed; inset: 0; z-index: 200; }
+.tmenu-back { position: absolute; inset: 0; }
+.tmenu { position: absolute; left: var(--x, 50%); top: var(--y, 50%); min-width: 220px; max-width: calc(100vw - 16px); background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 40px rgba(0,0,0,.25); padding: 6px; display: flex; flex-direction: column; }
+.tmenu:not(.at) { left: 50%; top: 50%; transform: translate(-50%, -50%); }
+.tm-title { font-weight: 700; padding: 6px 10px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
+.tm-it { display: flex; align-items: center; gap: 10px; border: 0; background: none; color: inherit; font: inherit; text-align: left; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+.tm-it:hover, .tm-it:focus-visible { background: var(--panel2); outline: none; }
+.tm-it.tm-done { color: var(--ok); font-weight: 600; }
+.tm-it.danger { color: var(--danger); }
+.tm-sep { height: 1px; background: var(--line); margin: 4px 6px; }
+@media (max-width: 760px) {
+  .tmenu-back { background: rgba(10,12,16,.4); }
+  .tmenu, .tmenu:not(.at) { left: 0; right: 0; top: auto; bottom: 0; transform: none; max-width: none; border-radius: 16px 16px 0 0; padding: 8px 8px max(12px, env(safe-area-inset-bottom)); animation: tm-up .16s ease-out; }
+  .tm-it { padding: 13px 14px; font-size: 16px; }
+  .tm-title { max-width: none; text-align: center; color: var(--muted); font-size: 14px; }
+}
+@keyframes tm-up { from { transform: translateY(30%); opacity: .5; } }
+/* Sheet: Mark done */
+.mark-done { background: var(--ok); color: #fff; border-color: transparent; gap: 6px; display: inline-flex; align-items: center; }
+.mark-done:hover { filter: brightness(1.08); }
+.mark-done.is-done { background: var(--panel); color: var(--text); border-color: var(--line); }
+@media (max-width: 560px) { .trow .more-btn { order: 1; } .trow-m { order: 2; } }
+.tmenu { max-height: calc(100dvh - 16px); overflow-y: auto; }
+@media (max-width: 760px) { .tmenu, .tmenu:not(.at) { max-height: 85dvh; } }

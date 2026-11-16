@@ -89,7 +89,22 @@ try {
   await page.locator('.dv-event', { hasText: 'Call bank' }).click();
   await page.locator('dialog .rte').click();
   await page.keyboard.type('Ask about the loan');
-  await page.locator('dialog').getByRole('button', { name: 'Done', exact: true }).click();
+  await page.locator('dialog').getByRole('button', { name: 'Save and close' }).click();
+  await page.locator('dialog.sheet').waitFor({ state: 'detached' });
+  // "Mark done" in the to-do sheet completes the task and closes the sheet; "Undo done" reverts it.
+  await page.locator('.dv-event', { hasText: 'Call bank' }).click();
+  await page.locator('dialog .mark-done').click();
+  await page.locator('dialog.sheet').waitFor({ state: 'detached' });
+  await page.locator('.dv-event.done', { hasText: 'Call bank' }).waitFor();
+  await page.locator('.dv-event', { hasText: 'Call bank' }).click();
+  assert.equal((await page.locator('dialog .mark-done').textContent()).trim(), 'Undo done');
+  await page.locator('dialog .mark-done').click();
+  await page.locator('dialog').getByRole('button', { name: 'Save and close' }).click();
+  await page.locator('.dv-event:not(.done)', { hasText: 'Call bank' }).waitFor();
+  // Quick menu (⋯ / right-click): plan without drag and drop
+  await page.locator('.dv-event', { hasText: 'Call bank' }).click({ button: 'right' });
+  await page.locator('.tmenu .tm-it', { hasText: 'Doing' }).click();
+  await page.locator('.sec-doing .sticky', { hasText: 'Call bank' }).waitFor();
 
   // Notes: create a rich note with photo and PDF
   await page.locator('nav.tabs a', { hasText: 'Notes' }).click();

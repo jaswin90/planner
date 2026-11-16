@@ -59,8 +59,9 @@ then, because clearing browser data (or a VDI profile reset) erases it. Import i
 What this does **not** protect against (the trade-off for having no passphrase):
 - The encryption key is kept in your Drive app folder, so Google, or anyone who gets into your Google
   account, could in principle read your data. If you need protection even from that, it needs a passphrase.
-- On a device where you've used the app, the browser keeps a copy so it opens offline. Click **Sign out** on
-  shared computers, and use Settings → **Forget this device** to remove that copy.
+- On a device where you've used the app, the browser keeps an encrypted copy so it opens offline. **Sign out**
+  removes that copy once everything has synced (if something hasn't synced yet, it asks first and keeps it).
+  Your email is not kept in the browser's plain storage.
 - "Export backup" (Settings) is password-protected unless you choose "No password".
 
 See [DESIGN.md](DESIGN.md) for how it works inside.

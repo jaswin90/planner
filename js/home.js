@@ -4,7 +4,7 @@
 
 import { h, icon, clear } from './ui.js';
 import { liveItems, isoDate, htmlToText, sectionOf } from './model.js';
-import { openTask, durOf } from './planner.js';
+import { openTask, durOf, withMenu } from './planner.js';
 import { projects, newProject } from './projects.js';
 
 export function renderHome(root, vault) {
@@ -50,6 +50,7 @@ export function renderHome(root, vault) {
         (showDate || late) && t.date && h('span', { class: late ? 'overdue' : '' }, dayLabel(t.date, today)),
         t.time && h('span', {}, timeRange(t)),
         t.due && h('span', { class: t.due < today && !done ? 'overdue' : '' }, `due ${dayLabel(t.due, today)}`)));
+    withMenu(el, vault, t.id, rerender);
     el.addEventListener('click', () => openTask(vault, t.id, rerender));
     el.addEventListener('keydown', (e) => { if (e.key === 'Enter') openTask(vault, t.id, rerender); });
     return el;

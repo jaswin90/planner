@@ -1,6 +1,6 @@
 // App boot: site account (shared with the library), cloud sync, header, routing.
 
-import { h, icon, clear, toast } from './ui.js';
+import { h, icon, clear, toast, confirmDialog } from './ui.js';
 import { CloudStore, siteAuth } from './cloud.js';
 import { renderHome } from './home.js';
 import { renderProjects } from './projectsview.js';
@@ -31,12 +31,17 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
 function knownAccounts() {
   try { return JSON.parse(localStorage.getItem('planner.accounts') || '[]'); } catch { return []; }
 }
+// Only what is needed to reopen a copy offline: no email or name in plain browser storage.
+// (Entries from the old Google Drive setup keep their email: adoptEarlierCopy matches on it.)
 function rememberAccount(a) {
   try {
-    const list = knownAccounts().filter((x) => x.id !== a.id);
-    list.unshift({ id: a.id, email: a.email, name: a.name, mode: a.mode });
+    const list = knownAccounts().filter((x) => x.id !== a.id).map((x) => (x.mode === 'google' ? x : { id: x.id, uid: x.uid, mode: x.mode }));
+    list.unshift({ id: a.id, uid: a.uid, mode: a.mode });
     localStorage.setItem('planner.accounts', JSON.stringify(list.slice(0, 5)));
   } catch { /* ignore */ }
+}
+function forgetAccount(id) {
+  try { localStorage.setItem('planner.accounts', JSON.stringify(knownAccounts().filter((x) => x.id !== id))); } catch { /* ignore */ }
 }
 
 // ---------- screens ----------
@@ -95,8 +100,8 @@ async function welcome(error) {
     main,
     sess.user && sess.invited && h('p', { class: 'muted small' }, `Signed in at the library as ${sess.user.email}.`),
     offline.length > 0 && h('div', { class: 'stack' }, h('p', { class: 'muted small' }, 'No internet? Open the copy saved on this device:'),
-      offline.map((a) => {
-        const b = h('button', { class: 'btn' }, `Open offline: ${a.email}`);
+      offline.map((a, i) => {
+        const b = h('button', { class: 'btn' }, offline.length > 1 ? `Open saved copy ${i + 1}` : 'Open the copy saved on this device');
         b.addEventListener('click', busy(b, () => start(a)));
         return b;
       })),
@@ -128,6 +133,8 @@ async function adoptEarlierCopy(account) {
 }
 
 async function start(account) {
+  // Offline entries store the id (f-<uid>); older ones had no uid.
+  if (account.mode === 'cloud' && !account.uid) account.uid = account.id.replace(/^f-/, '');
   const remote = account.mode === 'cloud' && navigator.onLine ? new CloudStore(account.uid) : null;
   if (account.mode === 'cloud') await adoptEarlierCopy(account).catch(() => {});
   vault = new Vault(account, remote);
@@ -223,6 +230,15 @@ async function signOut() {
     currentNoteEditor()?.editor.flush();
     await vault.saveLocal().catch(() => {});
     if (vault.remote) await vault.sync();
+    if (vault.account.mode === 'cloud') {
+      // Signed-out devices keep no copy, unless that copy holds changes the cloud doesn't have yet.
+      if (vault.remote && !vault.dirty && vault.status.state === 'synced') {
+        await vault.forgetDevice();
+        forgetAccount(vault.account.id);
+      } else if (!(await confirmDialog('Some changes have not reached the cloud yet (offline or a sync error). Sign out anyway? To keep them safe, the copy stays on this device; open the planner here again when online to sync it.', { ok: 'Sign out' }))) {
+        return;
+      }
+    }
     vault.lock();
   }
   try { sessionStorage.setItem('planner.noauto', '1'); } catch { /* ignore */ }

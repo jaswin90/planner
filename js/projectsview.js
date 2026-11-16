@@ -3,7 +3,7 @@
 
 import { h, icon, clear, promptDialog, confirmDialog, toast } from './ui.js';
 import { liveItems, isoDate, htmlToText } from './model.js';
-import { openTask } from './planner.js';
+import { openTask, withMenu } from './planner.js';
 import { projects, newProject, COLORS } from './projects.js';
 import { dayLabel, timeRange } from './home.js';
 
@@ -74,6 +74,7 @@ export function renderProjects(root, vault, { openId } = {}) {
         htmlToText(t.html) && h('span', { title: 'Has notes' }, icon('note'))));
     el.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/x-planner-task', t.id); el.classList.add('dragging'); });
     el.addEventListener('dragend', () => el.classList.remove('dragging'));
+    withMenu(el, vault, t.id, rerender);
     el.addEventListener('click', () => openTask(vault, t.id, rerender));
     el.addEventListener('keydown', (e) => { if (e.key === 'Enter') openTask(vault, t.id, rerender); });
     return el;
