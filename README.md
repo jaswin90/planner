@@ -74,4 +74,5 @@ node --test tests/*.test.mjs     # crypto + merge unit tests
 node tests/e2e.mjs               # full browser test, on-device mode (needs Playwright + Chromium)
 node tests/google.e2e.mjs        # Google sign-in + Drive sync against a fake Google, two devices
 node tests/sync.e2e.mjs          # sync engine merge between two devices
+node tests/mobile.e2e.mjs        # phone layout (iPhone size, touch)
 ```

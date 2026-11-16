@@ -2,7 +2,7 @@
 // left panes can be collapsed to give the note the whole width.
 // Each note in the list is drawn as a small sticky in the note's colour.
 
-import { h, icon, clear, confirmDialog, fmtWhen } from './ui.js';
+import { h, icon, clear, confirmDialog, fmtWhen, isPhone } from './ui.js';
 import { liveItems, htmlToText } from './model.js';
 import { createEditor, attachmentList } from './editor.js';
 import { currentProject, setCurrentProject, projects, newProject, projectSelect } from './projects.js';
@@ -72,7 +72,7 @@ export function renderNotes(root, vault, { openId } = {}) {
   function drawList() {
     const items = listed();
     countEl.textContent = `${proj ? vault.get(proj)?.name : state.filter === 'pinned' ? 'Pinned' : 'All notes'} · ${items.length}`;
-    clear(listEl).append(...(items.length ? items.map(noteCard) : [h('div', { class: 'muted pad' }, scopedNow().length ? 'No notes match.' : 'No notes here yet. Click "New note" to start.')]));
+    clear(listEl).append(...(items.length ? items.map(noteCard) : [h('div', { class: 'muted pad' }, scopedNow().length ? 'No notes match.' : isPhone() ? 'No notes here yet. Tap + to write one.' : 'No notes here yet. Click "New note" to start.')]));
   }
   function noteCard(n) {
     const p = n.projectId && vault.get(n.projectId);

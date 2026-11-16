@@ -238,9 +238,9 @@ try {
 
   // Phone layout renders
   await page.setViewportSize({ width: 390, height: 800 });
-  await page.locator('nav.tabs a', { hasText: 'Planner' }).click();
-  await page.locator('.seg button', { hasText: 'Month' }).click();
-  await page.locator('.cal').waitFor();
+  await page.locator('.btabs a', { hasText: 'Planner' }).click();
+  await page.locator('.m-seg button', { hasText: 'Month' }).click();
+  await page.locator('.m-month').waitFor();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   assert.ok(overflow <= 1, `horizontal overflow ${overflow}px on phone`);
   if (shots) await page.screenshot({ path: `${shots}/5-phone.png` });

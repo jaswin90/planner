@@ -1,6 +1,9 @@
 // App boot: site account (shared with the library), cloud sync, header, routing.
 
-import { h, icon, clear, toast, confirmDialog } from './ui.js';
+import { h, icon, clear, toast, confirmDialog, isPhone, setTitle, actionSheet } from './ui.js';
+import { quickAdd } from './quickadd.js';
+import { plannerDay } from './planner.js';
+import { currentProject } from './projects.js';
 import { CloudStore, siteAuth } from './cloud.js';
 import { renderHome } from './home.js';
 import { renderProjects } from './projectsview.js';
@@ -145,7 +148,7 @@ async function start(account) {
 }
 
 // ---------- main app ----------
-let view, statusPill, ddSlot;
+let view, statusPill, ddSlot, avatar, current = '';
 
 function enterApp() {
   clear(app);
@@ -157,18 +160,28 @@ function enterApp() {
     h('a', { href: '#/notes', dataset: { tab: 'notes' } }, icon('note'), h('span', {}, 'Notes')));
   view = h('div', { class: 'view' });
   ddSlot = h('div', { class: 'dd-slot' });
+  // Phones: a large page title, an account button (sync, settings, sign out), bottom tabs and a + button.
+  const initial = vault.account.mode === 'cloud' && (vault.account.name || '').trim()[0];
+  avatar = h('button', { class: 'avatar', 'aria-label': 'Account, sync and settings', 'aria-haspopup': 'menu', onclick: onAvatar },
+    initial ? initial.toUpperCase() : icon('user'), h('i', { class: 'av-dot', 'aria-hidden': 'true' }));
+  const btabs = h('nav', { class: 'btabs', 'aria-label': 'Sections' },
+    [['today', 'sun', 'Today'], ['planner', 'calendar', 'Planner'], ['notes', 'note', 'Notes'], ['projects', 'folder', 'Projects']]
+      .map(([k, ic, label]) => h('a', { href: `#/${k}`, dataset: { btab: k } }, icon(ic), h('span', {}, label))));
+  const fab = h('button', { class: 'fab', 'aria-label': 'Add a task', title: 'Add a task', onclick: onFab }, icon('plus'));
   app.append(
     h('header', { class: 'top' },
+      h('div', { class: 'ph-title' }, h('div', { class: 'ph-sub' }), h('h1', {})),
       h('div', { class: 'brand small' }, h('span', { class: 'logo' }, icon('calendar')), h('span', { class: 'bname' }, 'My Planner')),
       nav, ddSlot, h('span', { class: 'grow' }), statusPill,
       h('a', { class: 'icon-btn', href: '#/settings', title: 'Settings', 'aria-label': 'Settings', dataset: { tab: 'settings' } }, icon('gear')),
-      h('button', { class: 'icon-btn', title: 'Sign out', 'aria-label': 'Sign out', onclick: signOut }, icon('logout'))),
-    view);
+      h('button', { class: 'icon-btn', title: 'Sign out', 'aria-label': 'Sign out', onclick: signOut }, icon('logout')),
+      avatar),
+    view, fab, btabs);
 
   vault.addEventListener('status', drawStatus);
   vault.addEventListener('change', refresh);
   drawStatus();
-  if (!location.hash || location.hash === '#') location.hash = '#/projects';
+  if (!location.hash || location.hash === '#') location.hash = isPhone() ? '#/today' : '#/projects';
   route();
   vault.sync();
   clearInterval(syncTimer);
@@ -184,17 +197,53 @@ function drawProjectDropdown(name) {
 
 function route() {
   if (!vault?.dek || !view) return;
-  let [, name = 'projects', arg] = location.hash.split('/');
-  if (name === 'home') name = 'projects';
+  const phone = isPhone();
+  let [, name, arg] = location.hash.split('/');
+  if (!name || name === 'home') name = phone ? 'today' : 'projects';
+  current = name;
   drawProjectDropdown(name);
-  for (const a of app.querySelectorAll('[data-tab]')) a.classList.toggle('on', a.dataset.tab === name);
+  // Desktop has no separate Today tab: the Projects overview holds today's list.
+  for (const a of app.querySelectorAll('[data-tab]')) a.classList.toggle('on', a.dataset.tab === (name === 'today' ? 'projects' : name));
+  for (const a of app.querySelectorAll('[data-btab]')) {
+    const on = a.dataset.btab === name;
+    a.classList.toggle('on', on);
+    if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+  }
+  app.classList.toggle('has-fab', ['today', 'planner', 'projects', 'notes'].includes(name) && !arg);
+  const fab = app.querySelector('.fab');
+  if (fab) fab.setAttribute('aria-label', name === 'notes' ? 'New note' : 'Add a task'), fab.title = fab.getAttribute('aria-label');
   pendingRefresh = false;
   view.dataset.view = name;
+  setTitle({ notes: 'Notes', settings: 'Settings', projects: 'Projects' }[name] || '', '');
   if (name === 'notes') renderNotes(view, vault, { openId: arg || null });
   else if (name === 'settings') renderSettings(view, vault, { onSignOut: signOut });
   else if (name === 'planner') renderPlanner(view, vault);
   else if (name === 'projects' && arg) renderProjects(view, vault, { openId: arg });
-  else renderHome(view, vault); // Projects overview: all projects, today, next week, recent notes
+  else if (name === 'today') renderHome(view, vault, { mode: phone ? 'today' : 'full' });
+  else renderHome(view, vault, { mode: phone ? 'projects' : 'full' }); // desktop: all projects, today, next week, recent notes
+}
+
+/** Phone + button: a new task for the day on screen (Planner) or today. */
+function onFab() {
+  if (current === 'notes') {
+    const n = vault.put({ type: 'note', title: '', html: '', projectId: currentProject(vault) || null, color: 'yellow', attachments: [] });
+    location.hash = `#/notes/${n.id}`;
+    return;
+  }
+  const opts = { after: route };
+  if (current === 'planner') Object.assign(opts, { date: plannerDay(), projectId: currentProject(vault) || null });
+  else if (current === 'projects') opts.date = null;
+  quickAdd(vault, opts);
+}
+
+function onAvatar() {
+  const s = vault.status;
+  actionSheet(s.msg || LABEL[s.state] || 'Account', [
+    s.state !== 'local' && { icon: 'sync', label: s.state === 'auth' ? 'Sign in again' : 'Sync now', onClick: onStatusClick },
+    { icon: 'gear', label: 'Settings', onClick: () => { location.hash = '#/settings'; } },
+    'sep',
+    { icon: 'logout', label: 'Sign out', cls: 'danger', onClick: signOut },
+  ], avatar);
 }
 
 /** Re-render after a sync brought in changes, without disturbing typing. */
@@ -213,6 +262,7 @@ function drawStatus() {
   statusPill.className = `status st-${s.state}`;
   statusPill.title = s.msg || '';
   statusPill.lastChild.textContent = LABEL[s.state] ?? s.state;
+  if (avatar) { avatar.className = `avatar st-${s.state}`; avatar.title = s.msg || LABEL[s.state] || ''; }
 }
 
 async function onStatusClick() {
@@ -251,6 +301,8 @@ window.addEventListener('online', () => {
   if (vault?.account.mode === 'cloud' && !vault.remote) vault.remote = new CloudStore(vault.account.uid);
   vault?.sync();
 });
+// Switching between phone and desktop width (rotating a tablet, resizing a window) redraws the page.
+window.matchMedia?.('(max-width: 760px)').addEventListener?.('change', () => { if (!document.querySelector('dialog[open]')) route(); });
 window.addEventListener('projectchange', () => { currentNoteEditor()?.editor.flush(); route(); });
 window.addEventListener('focus', () => vault?.dek && vault.sync());
 

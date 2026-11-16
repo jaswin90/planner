@@ -29,6 +29,14 @@ Browser ──(AES-GCM ciphertext only)──> Google Drive appDataFolder   (syn
 | `js/projectsview.js` | Projects: per-project board (To do / Doing / Backlog / Done, drag between columns) and notes |
 | `js/markdown.js` | Markdown → note HTML for pasting Markdown |
 | `js/planner.js` | Calendar: collapsible sticky sidebar, Day view, Month view, task dialog |
+| `js/quickadd.js` | Phone "+" sheet: title, then chip buttons for day, time, length and project |
+
+## Phones (≤ 760 px)
+Same data and code, different layout: a large page title with an account button (sync, settings,
+sign out), bottom tabs **Today · Planner · Notes · Projects**, and a **+** button. The planner shows a
+week strip and the day's list + timeline (or a month of dots), with Unplanned / Doing / Backlog / Done
+as chips that open a sheet. Drag and drop is replaced by the task menu (⋯, long-press, or right-click
+on desktop): Mark done, Today, Tomorrow, Pick date, Doing, Backlog, Delete.
 | `js/notes.js` | Three collapsible panes: projects, sticky note list, note |
 | `js/settings.js` | Projects/notebooks, account, backup, delete |
 | `js/app.js` | Google sign-in, header, routing |

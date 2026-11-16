@@ -2,14 +2,17 @@
 // recent notes and every project at a glance. Everything links into Calendar,
 // Projects or Notes.
 
-import { h, icon, clear } from './ui.js';
+import { h, icon, clear, setTitle, toast } from './ui.js';
 import { liveItems, isoDate, htmlToText, sectionOf } from './model.js';
 import { openTask, durOf, withMenu } from './planner.js';
 import { projects, newProject } from './projects.js';
 
-export function renderHome(root, vault) {
+/**
+ * mode: 'full' (desktop landing), 'today' (phone Today tab), 'projects' (phone Projects tab).
+ */
+export function renderHome(root, vault, { mode = 'full' } = {}) {
   clear(root);
-  const rerender = () => renderHome(root, vault);
+  const rerender = () => renderHome(root, vault, { mode });
   const today = isoDate(new Date());
   const tasks = liveItems(vault.doc, 'task');
   const notes = liveItems(vault.doc, 'note');
@@ -35,26 +38,7 @@ export function renderHome(root, vault) {
     root.querySelector('.home-quick input')?.focus();
   });
 
-  const row = (t, { showDate = false } = {}) => {
-    const p = t.projectId && vault.get(t.projectId);
-    const done = t.status === 'done';
-    const box = h('button', { class: `tick${done ? ' on' : ''}`, 'aria-label': done ? 'Mark as not done' : 'Mark as done', title: done ? 'Mark as not done' : 'Mark as done' }, done && icon('check'));
-    box.addEventListener('click', (e) => { e.stopPropagation(); vault.update(t.id, { status: done ? 'todo' : 'done' }); rerender(); });
-    const late = !done && ((t.date && t.date < today) || (t.due && t.due < today));
-    const el = h('div', { class: `trow${done ? ' done' : ''}`, tabindex: '0', role: 'button' },
-      box,
-      h('span', { class: 'trow-t' }, t.title || 'Untitled'),
-      h('span', { class: 'trow-m' },
-        t.status === 'doing' && h('span', { class: 'pill doing' }, 'Doing'),
-        p && h('span', { class: 'ptag pdot', vars: { '--pc': p.color } }, p.name),
-        (showDate || late) && t.date && h('span', { class: late ? 'overdue' : '' }, dayLabel(t.date, today)),
-        t.time && h('span', {}, timeRange(t)),
-        t.due && h('span', { class: t.due < today && !done ? 'overdue' : '' }, `due ${dayLabel(t.due, today)}`)));
-    withMenu(el, vault, t.id, rerender);
-    el.addEventListener('click', () => openTask(vault, t.id, rerender));
-    el.addEventListener('keydown', (e) => { if (e.key === 'Enter') openTask(vault, t.id, rerender); });
-    return el;
-  };
+  const row = (t, opts) => taskRow(vault, t, rerender, opts);
   const card = (title, action, ...content) => h('section', { class: 'hcard' }, h('div', { class: 'hcard-h' }, h('h2', {}, title), action), ...content);
   const empty = (text) => h('p', { class: 'muted small hempty' }, text);
   const link = (label, hash) => h('a', { class: 'hlink', href: hash }, label, icon('right'));
@@ -78,6 +62,43 @@ export function renderHome(root, vault) {
 
   const addProject = async () => { const p = await newProject(vault); if (p) location.hash = `#/projects/${p.id}`; };
   const noProj = tasks.filter((t) => !t.projectId || !vault.get(t.projectId));
+  const doneToday = todays.filter((t) => t.status === 'done').length;
+  const leftToday = todays.length - doneToday + overdue.length;
+  const progress = todays.length > 0 && h('div', { class: 'tprog', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(todays.length), 'aria-valuenow': String(doneToday), 'aria-label': 'Done today' },
+    h('span', { vars: { '--w': Math.round((100 * doneToday) / todays.length) + '%' } }));
+  const moveAll = overdue.length > 1 && h('button', { class: 'link small', onclick: () => {
+    for (const t of overdue) vault.update(t.id, { date: today });
+    toast(`Moved ${overdue.length} tasks to today`, 'ok', 2500); rerender();
+  } }, 'Move all to today');
+  const overdueGroup = overdue.length > 0 && h('div', { class: 'hgroup' }, h('div', { class: 'hgroup-h overdue' }, h('span', {}, `Overdue · ${overdue.length}`), moveAll), overdue.map((t) => row(t)));
+  const todayCard = () => card(mode === 'today' ? `Today · ${leftToday} left` : 'Today', mode === 'today' ? (doneToday > 0 && h('span', { class: 'ok-n' }, `${doneToday} done`)) : link('Open planner', '#/planner'),
+    progress, overdueGroup,
+    todays.length ? todays.map((t) => row(t)) : !overdue.length && empty(mode === 'today' ? 'Nothing planned for today. Tap + to add a task.' : 'Nothing planned for today. Add a task above, or drag one onto today in the planner.'));
+  const doingCard = () => card('In progress', null, doing.length ? doing.map((t) => row(t, { showDate: true })) : empty('Nothing in progress. Set a task to “Doing” to see it here.'));
+  const weekCard = () => card('Next 7 days', null, upcoming.length ? upcoming.slice(0, 12).map((t) => row(t, { showDate: true })) : empty('Nothing planned for the coming week.'));
+  const inboxCard = () => inbox.length > 0 && card(`Not planned yet · ${inbox.length}`, link('Plan', '#/planner'), inbox.slice(0, 6).map((t) => row(t)));
+  const projSection = () => h('section', { class: 'home-projects' },
+    h('div', { class: 'hsec-h' }, h('h2', {}, 'Projects'), h('span', { class: 'grow' }),
+      noProj.length > 0 && h('a', { class: 'hlink', href: '#/projects/none' }, `Tasks without a project · ${noProj.filter((t) => t.status !== 'done').length}`, icon('right'))),
+    h('div', { class: 'pcards' }, projs.map(projCard),
+      h('button', { class: 'pcard pcard-new', onclick: addProject }, icon('plus'), projs.length ? 'New project' : 'Create your first project')));
+  const notesCard = () => card('Recent notes', h('button', { class: 'btn small', onclick: newNote }, icon('plus'), 'New note'),
+    recent.length ? h('div', { class: 'nlist' }, recent.map((n) => h('a', { class: 'nrow', href: `#/notes/${n.id}` },
+      h('b', {}, n.title || 'Untitled'),
+      h('span', { class: 'muted small' }, (htmlToText(n.html) || 'Empty note').slice(0, 110)),
+      h('span', { class: 'muted small' }, ago(n.updatedAt))))) : empty('No notes yet.'),
+    recent.length > 0 && link('All notes', '#/notes'));
+
+  if (mode === 'today') {
+    setTitle('Today', new Date().toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' }));
+    root.append(h('div', { class: 'home m-home' }, todayCard(), doingCard(), inboxCard(), weekCard()));
+    return;
+  }
+  if (mode === 'projects') {
+    setTitle('Projects', `${projs.length} project${projs.length === 1 ? '' : 's'}`);
+    root.append(h('div', { class: 'home m-home' }, projSection(), notesCard()));
+    return;
+  }
   root.append(h('div', { class: 'home' },
     h('div', { class: 'home-head' },
       h('div', {},
@@ -85,26 +106,33 @@ export function renderHome(root, vault) {
         h('p', { class: 'muted' }, new Date().toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
           ' · ', `${todays.filter((t) => t.status !== 'done').length + overdue.length} to do today`)),
       h('div', { class: 'home-quick' }, quick)),
-    h('section', { class: 'home-projects' },
-      h('div', { class: 'hsec-h' }, h('h2', {}, 'Projects'), h('span', { class: 'grow' }),
-        noProj.length > 0 && h('a', { class: 'hlink', href: '#/projects/none' }, `Tasks without a project · ${noProj.filter((t) => t.status !== 'done').length}`, icon('right'))),
-      h('div', { class: 'pcards' }, projs.map(projCard),
-        h('button', { class: 'pcard pcard-new', onclick: addProject }, icon('plus'), projs.length ? 'New project' : 'Create your first project'))),
+    projSection(),
     h('div', { class: 'home-grid' },
-      h('div', { class: 'hcol' },
-        card('Today', link('Open planner', '#/planner'),
-          overdue.length > 0 && h('div', { class: 'hgroup' }, h('div', { class: 'hgroup-h overdue' }, `Overdue · ${overdue.length}`), overdue.map((t) => row(t))),
-          todays.length ? todays.map((t) => row(t)) : !overdue.length && empty('Nothing planned for today. Add a task above, or drag one onto today in the planner.')),
-        card('In progress', null, doing.length ? doing.map((t) => row(t, { showDate: true })) : empty('Nothing in progress. Set a task to “Doing” to see it here.')),
-        card('Next 7 days', null, upcoming.length ? upcoming.slice(0, 12).map((t) => row(t, { showDate: true })) : empty('Nothing planned for the coming week.'))),
-      h('div', { class: 'hcol' },
-        inbox.length > 0 && card(`Not planned yet · ${inbox.length}`, link('Plan', '#/planner'), inbox.slice(0, 6).map((t) => row(t))),
-        card('Recent notes', h('button', { class: 'btn small', onclick: newNote }, icon('plus'), 'New note'),
-          recent.length ? h('div', { class: 'nlist' }, recent.map((n) => h('a', { class: 'nrow', href: `#/notes/${n.id}` },
-            h('b', {}, n.title || 'Untitled'),
-            h('span', { class: 'muted small' }, (htmlToText(n.html) || 'Empty note').slice(0, 110)),
-            h('span', { class: 'muted small' }, ago(n.updatedAt))))) : empty('No notes yet.'),
-          recent.length > 0 && link('All notes', '#/notes'))))));
+      h('div', { class: 'hcol' }, todayCard(), doingCard(), weekCard()),
+      h('div', { class: 'hcol' }, inboxCard(), notesCard()))));
+}
+
+/** One task as a checklist row: tick to complete, ⋯ / long-press for more, tap to open. */
+export function taskRow(vault, t, rerender, { showDate = false } = {}) {
+  const today = isoDate(new Date());
+  const p = t.projectId && vault.get(t.projectId);
+  const done = t.status === 'done';
+  const box = h('button', { class: `tick${done ? ' on' : ''}`, 'aria-label': done ? 'Mark as not done' : 'Mark as done', title: done ? 'Mark as not done' : 'Mark as done' }, done && icon('check'));
+  box.addEventListener('click', (e) => { e.stopPropagation(); vault.update(t.id, { status: done ? 'todo' : 'done' }); rerender(); });
+  const late = !done && ((t.date && t.date < today) || (t.due && t.due < today));
+  const el = h('div', { class: `trow${done ? ' done' : ''}`, tabindex: '0', role: 'button' },
+    box,
+    h('span', { class: 'trow-t' }, t.title || 'Untitled'),
+    h('span', { class: 'trow-m' },
+      t.status === 'doing' && h('span', { class: 'pill doing' }, 'Doing'),
+      p && h('span', { class: 'ptag pdot', vars: { '--pc': p.color } }, p.name),
+      (showDate || late) && t.date && h('span', { class: late ? 'overdue' : '' }, dayLabel(t.date, today)),
+      t.time && h('span', {}, timeRange(t)),
+      t.due && h('span', { class: t.due < today && !done ? 'overdue' : '' }, `due ${dayLabel(t.due, today)}`)));
+  withMenu(el, vault, t.id, rerender);
+  el.addEventListener('click', () => openTask(vault, t.id, rerender));
+  el.addEventListener('keydown', (e) => { if (e.key === 'Enter') openTask(vault, t.id, rerender); });
+  return el;
 }
 
 export function dayLabel(d, today = isoDate(new Date())) {

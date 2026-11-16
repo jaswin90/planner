@@ -73,7 +73,64 @@ const ICONS = {
   box: ['M4 7h16v4H4zM5 11v9h14v-9M10 15h4'],
   undo: ['M9 14L4 9l5-5', 'M4 9h11a5 5 0 0 1 0 10h-3'],
   clock: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2'],
+  sun: ['M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', 'M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4'],
+  user: ['M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0'],
 };
+
+/** Phones: a small screen, so the app uses its phone layout (bottom tabs, agenda planner). */
+export const isPhone = () => typeof window !== 'undefined' && !!window.matchMedia?.('(max-width: 760px)').matches;
+
+/** Phone header title (desktop ignores it). */
+export function setTitle(title, sub = '') {
+  const t = document.querySelector('.ph-title h1'), s = document.querySelector('.ph-title .ph-sub');
+  if (t) t.textContent = title;
+  if (s) s.textContent = sub;
+}
+
+/**
+ * A menu of actions: next to `anchor` on desktop, a sheet from the bottom on phones.
+ * items: { icon, label, onClick, cls } | 'sep' | falsy (skipped). Returns close().
+ */
+export function actionSheet(title, items, anchor) {
+  document.querySelector('.tmenu-wrap')?.remove();
+  const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey, true); anchor?.focus?.(); };
+  const menu = h('div', { class: 'tmenu', role: 'menu', 'aria-label': title },
+    title && h('div', { class: 'tm-title' }, title),
+    items.filter(Boolean).map((it) => it === 'sep' ? h('div', { class: 'tm-sep' })
+      : h('button', { class: `tm-it${it.cls ? ' ' + it.cls : ''}`, role: 'menuitem', onclick: () => { close(); it.onClick(); } }, icon(it.icon), h('span', {}, it.label))));
+  const wrap = h('div', { class: 'tmenu-wrap' }, h('div', { class: 'tmenu-back', onclick: close }), menu);
+  const onKey = (e) => {
+    const list = [...menu.querySelectorAll('.tm-it')];
+    const i = list.indexOf(document.activeElement);
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); list[(i + 1) % list.length].focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); list[(i - 1 + list.length) % list.length].focus(); }
+    else if (e.key === 'Tab') e.preventDefault();
+  };
+  document.addEventListener('keydown', onKey, true);
+  (document.querySelector('dialog[open]') || document.body).append(wrap);
+  if (anchor && !isPhone()) {
+    const r = anchor.getBoundingClientRect(), m = menu.getBoundingClientRect();
+    menu.style.setProperty('--x', Math.max(8, Math.min(innerWidth - m.width - 8, r.right - m.width)) + 'px');
+    menu.style.setProperty('--y', (r.bottom + 4 + m.height > innerHeight - 8 ? Math.max(8, r.top - m.height - 4) : r.bottom + 4) + 'px');
+    menu.classList.add('at');
+  }
+  menu.querySelector('.tm-it')?.focus();
+  return close;
+}
+
+/** A bottom sheet on phones (a centred dialog on desktop). Returns the <dialog>. */
+export function bottomSheet(title, body, { onClose } = {}) {
+  const dlg = h('dialog', { class: 'bsheet', 'aria-label': title },
+    h('div', { class: 'grab', 'aria-hidden': 'true' }),
+    h('header', {}, h('h2', {}, title), h('button', { class: 'icon-btn', 'aria-label': 'Close', onclick: () => dlg.close() }, icon('close'))),
+    h('div', { class: 'bsheet-body' }, body));
+  dlg.addEventListener('close', () => { dlg.remove(); onClose?.(); });
+  dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+  document.body.append(dlg);
+  dlg.showModal();
+  return dlg;
+}
 
 /**
  * Long-press (touch) or right-click (mouse) opens a menu. A click that ends a

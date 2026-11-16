@@ -2,13 +2,14 @@
 // into Unplanned / Doing / Planned / Backlog / Done. Drag a sticky onto a
 // day to plan it; drag it onto a section to change its state.
 
-import { h, icon, clear, confirmDialog, longPress, toast } from './ui.js';
+import { h, icon, clear, confirmDialog, longPress, toast, actionSheet, isPhone, setTitle, bottomSheet } from './ui.js';
 import { SECTIONS, sectionOf, liveItems, monthGrid, isoDate, htmlToText } from './model.js';
 import { createEditor, attachmentList } from './editor.js';
 import { currentProject, projectSelect } from './projects.js';
+import { taskRow } from './home.js';
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const phone = typeof window !== 'undefined' && window.matchMedia?.('(max-width: 760px)').matches;
+const phone = isPhone();
 const state = { y: new Date().getFullYear(), m: new Date().getMonth(), day: isoDate(new Date()), mode: phone ? 'day' : 'month', collapsed: new Set(phone ? ['done', 'backlog'] : ['done']) };
 
 export function renderPlanner(root, vault) {
@@ -176,6 +177,10 @@ export function renderPlanner(root, vault) {
     flush();
     const layer = h('div', { class: 'dv-events' }, cols.map((c) => block(c)));
     grid.append(layer);
+    if (state.day === isoDate(new Date())) {
+      const now = new Date(), m = now.getHours() * 60 + now.getMinutes();
+      if (m >= base) grid.append(h('div', { class: 'dv-now', 'aria-hidden': 'true', vars: { '--top': (m - base) * PXM + 'px' } }));
+    }
     return grid;
 
     function block({ t, start, end, col, n }) {
@@ -244,8 +249,94 @@ export function renderPlanner(root, vault) {
     openTask(vault, t.id, rerender, { isNew: true });
   }
 
+  if (isPhone()) { root.append(phoneView()); return; }
   root.append(h('div', { class: `planner${sideHidden ? ' side-hidden' : ''}` }, side, h('main', { class: 'cal-wrap' }, nav, body)));
+
+  /** Phones: Day (week strip + agenda + timeline) or Month (dots + the chosen day's list). No drag and drop. */
+  function phoneView() {
+    const dayMode = state.mode === 'day';
+    const fmt = (d, o) => new Date(d + 'T00:00').toLocaleDateString([], o);
+    const long = { weekday: 'long', day: 'numeric', month: 'long' };
+    if (dayMode) setTitle('Planner', fmt(state.day, long));
+    else setTitle(new Date(state.y, state.m, 1).toLocaleDateString([], { month: 'long' }), String(state.y));
+    const jump = (n) => {
+      if (dayMode) setDay(addDays(state.day, 7 * n));
+      else { shift(n); state.day = today.startsWith(`${state.y}-${String(state.m + 1).padStart(2, '0')}`) ? today : isoDate(new Date(state.y, state.m, 1)); }
+      rerender();
+    };
+    const segBtn = (m, label) => h('button', { class: state.mode === m ? 'on' : '', 'aria-pressed': String(state.mode === m), onclick: () => { state.mode = m; rerender(); } }, label);
+    const bar = h('div', { class: 'm-bar' },
+      h('div', { class: 'm-seg', role: 'group', 'aria-label': 'View' }, segBtn('day', 'Day'), segBtn('month', 'Month')),
+      h('button', { class: 'icon-btn', 'aria-label': dayMode ? 'Previous week' : 'Previous month', onclick: () => jump(-1) }, icon('left')),
+      h('button', { class: 'btn small', onclick: () => { setDay(today); rerender(); } }, 'Today'),
+      h('button', { class: 'icon-btn', 'aria-label': dayMode ? 'Next week' : 'Next month', onclick: () => jump(1) }, icon('right')));
+
+    const groups = [['unplanned', 'Unplanned'], ['doing', 'Doing'], ['backlog', 'Backlog'], ['done', 'Done']];
+    const chips = h('div', { class: 'm-chips' }, groups.map(([k, label]) => h('button', { class: `m-chip st-${k}`, onclick: () => groupSheet(k, label) },
+      label, h('b', {}, String(tasks.filter((t) => sectionOf(t) === k).length)))));
+
+    const open = (list) => list.filter((t) => t.status !== 'done').length;
+    const rows = (list, emptyText) => list.length ? list.map((t) => taskRow(vault, t, rerender)) : h('p', { class: 'muted small hempty' }, emptyText);
+    if (dayMode) {
+      const x = new Date(state.day + 'T00:00');
+      const monday = addDays(state.day, -((x.getDay() + 6) % 7));
+      const week = h('div', { class: 'm-week' }, [0, 1, 2, 3, 4, 5, 6].map((i) => {
+        const d = addDays(monday, i);
+        return h('button', { class: `m-wd${d === state.day ? ' on' : ''}${d === today ? ' today' : ''}`, 'aria-pressed': String(d === state.day), 'aria-label': fmt(d, long), onclick: () => { setDay(d); rerender(); } },
+          h('span', {}, fmt(d, { weekday: 'short' })), h('b', {}, String(Number(d.slice(8)))), h('i', { class: `dot${open(byDate.get(d) || []) ? '' : ' none'}` }));
+      }));
+      swipe(week, jump);
+      const list = byDate.get(state.day) || [];
+      const done = list.filter((t) => t.status === 'done').length;
+      const any = h('section', { class: 'hcard m-card' },
+        h('div', { class: 'hcard-h' }, h('h2', {}, 'Any time'), list.length > 0 && h('span', { class: 'muted small' }, `${done} of ${list.length} done`)),
+        rows(list.filter((t) => !t.time), list.length ? 'Everything on this day has a time.' : 'Nothing planned. Tap + to add a task.'));
+      return h('div', { class: 'mplanner' }, bar, week, chips, any, timeline(list));
+    }
+    const grid = h('div', { class: 'm-month' }, ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((w) => h('div', { class: 'm-wh', 'aria-hidden': 'true' }, w)),
+      monthGrid(state.y, state.m).map((d) => {
+        const l = byDate.get(d.date) || [];
+        return h('button', { class: `m-day${d.inMonth ? '' : ' out'}${d.date === today ? ' today' : ''}${d.date === state.day ? ' on' : ''}`,
+          'aria-pressed': String(d.date === state.day), 'aria-label': `${fmt(d.date, long)}: ${l.length} task${l.length === 1 ? '' : 's'}`, onclick: () => { setDay(d.date); rerender(); } },
+        String(d.day), h('i', { 'aria-hidden': 'true' }, Array.from({ length: Math.min(3, open(l)) }, () => h('s'))));
+      }));
+    swipe(grid, jump);
+    const sel = byDate.get(state.day) || [];
+    const dayCard = h('section', { class: 'hcard m-card' },
+      h('div', { class: 'hcard-h' }, h('h2', {}, fmt(state.day, long)), h('button', { class: 'link small', onclick: () => { state.mode = 'day'; rerender(); } }, 'Open day ›')),
+      rows(sel, 'Nothing planned. Tap + to add a task.'));
+    return h('div', { class: 'mplanner' }, bar, chips, grid, dayCard);
+  }
+
+  /** The Unplanned / Doing / Backlog / Done lists, as a sheet. */
+  function groupSheet(key, label) {
+    const list = h('div', { class: 'm-list' });
+    const dlg = bottomSheet(label, list);
+    const draw = () => {
+      const items = liveItems(vault.doc, 'task').filter((t) => (!project || t.projectId === project) && sectionOf(t) === key)
+        .sort(key === 'done' ? (a, b) => b.updatedAt - a.updatedAt : sortTasks);
+      dlg.querySelector('header h2').textContent = `${label} · ${items.length}`;
+      clear(list).append(...(items.length ? items.slice(0, 300).map((t) => taskRow(vault, t, () => { draw(); rerender(); }, { showDate: true }))
+        : [h('p', { class: 'muted small hempty' }, 'Nothing here.')]));
+    };
+    draw();
+  }
 }
+
+/** Horizontal swipe (touch or mouse): fn(1) for left, fn(-1) for right. */
+function swipe(el, fn) {
+  let x0 = null, y0 = 0;
+  el.addEventListener('pointerdown', (e) => { x0 = e.clientX; y0 = e.clientY; });
+  el.addEventListener('pointerup', (e) => {
+    if (x0 === null) return;
+    const dx = e.clientX - x0, dy = e.clientY - y0; x0 = null;
+    if (Math.abs(dx) > 50 && Math.abs(dy) < 40) { el.addEventListener('click', (c) => { c.stopPropagation(); c.preventDefault(); }, { capture: true, once: true }); fn(dx < 0 ? 1 : -1); }
+  });
+  el.addEventListener('pointercancel', () => { x0 = null; });
+}
+
+/** The day the planner is showing (new tasks from the + button go there). */
+export function plannerDay() { return state.day; }
 
 // ---- time ranges: a task with a time runs for `dur` minutes (default 60) ----
 const HOUR_PX = 48, PXM = HOUR_PX / 60, SNAP = 15;
@@ -319,50 +410,26 @@ export function withMenu(el, vault, id, after) {
 export function taskMenu(vault, id, anchor, after) {
   const t = vault.get(id);
   if (!t) return;
-  document.querySelector('.tmenu-wrap')?.remove();
   const today = isoDate(new Date());
   const active = t.status === 'backlog' || t.status === 'done' ? 'todo' : t.status;
-  const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey, true); anchor?.focus?.(); };
-  const set = (patch, msg) => { close(); vault.update(id, patch); if (msg) toast(msg, 'ok', 2000); after?.(); };
-  const item = (ic, label, fn, cls = '') => h('button', { class: `tm-it${cls}`, role: 'menuitem', onclick: fn }, icon(ic), h('span', {}, label));
+  const set = (patch, msg) => { vault.update(id, patch); if (msg) toast(msg, 'ok', 2000); after?.(); };
   const isDone = t.status === 'done';
-  const menu = h('div', { class: 'tmenu', role: 'menu', 'aria-label': `Actions for ${t.title || 'Untitled'}` },
-    h('div', { class: 'tm-title' }, t.title || 'Untitled'),
-    item('check', isDone ? 'Mark not done' : 'Mark done', () => set({ status: isDone ? 'todo' : 'done' }, isDone ? '' : 'Done ✓'), ' tm-done'),
-    h('div', { class: 'tm-sep' }),
-    t.date !== today && item('calendar', 'Today', () => set({ date: today, status: active }, 'Planned for today')),
-    item('right', 'Tomorrow', () => set({ date: addDays(today, 1), status: active }, 'Planned for tomorrow')),
-    item('clock', 'Pick date & time…', () => { close(); openTask(vault, id, after); }),
-    t.date && item('undo', 'Unschedule', () => set({ date: null, time: null })),
-    h('div', { class: 'tm-sep' }),
-    t.status !== 'doing' && item('play', 'Doing', () => set({ status: 'doing' })),
-    t.status !== 'todo' && item('note', 'To do', () => set({ status: 'todo' })),
-    t.status !== 'backlog' && item('box', 'Backlog', () => set({ status: 'backlog' })),
-    h('div', { class: 'tm-sep' }),
-    item('trash', 'Delete', async () => {
-      close();
+  actionSheet(t.title || 'Untitled', [
+    { icon: 'check', label: isDone ? 'Mark not done' : 'Mark done', cls: 'tm-done', onClick: () => set({ status: isDone ? 'todo' : 'done' }, isDone ? '' : 'Done ✓') },
+    'sep',
+    t.date !== today && { icon: 'calendar', label: 'Today', onClick: () => set({ date: today, status: active }, 'Planned for today') },
+    { icon: 'right', label: 'Tomorrow', onClick: () => set({ date: addDays(today, 1), status: active }, 'Planned for tomorrow') },
+    { icon: 'clock', label: 'Pick date & time…', onClick: () => openTask(vault, id, after) },
+    t.date && { icon: 'undo', label: 'Unschedule', onClick: () => set({ date: null, time: null }) },
+    'sep',
+    t.status !== 'doing' && { icon: 'play', label: 'Doing', onClick: () => set({ status: 'doing' }) },
+    t.status !== 'todo' && { icon: 'note', label: 'To do', onClick: () => set({ status: 'todo' }) },
+    t.status !== 'backlog' && { icon: 'box', label: 'Backlog', onClick: () => set({ status: 'backlog' }) },
+    'sep',
+    { icon: 'trash', label: 'Delete', cls: 'danger', onClick: async () => {
       if (await confirmDialog(`Delete "${t.title || 'Untitled'}"?`, { ok: 'Delete', danger: true })) { vault.remove(id); after?.(); }
-    }, ' danger'));
-  const wrap = h('div', { class: 'tmenu-wrap' }, h('div', { class: 'tmenu-back', onclick: close }), menu);
-  const onKey = (e) => {
-    const items = [...menu.querySelectorAll('.tm-it')];
-    const i = items.indexOf(document.activeElement);
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
-    else if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
-    else if (e.key === 'Tab') { e.preventDefault(); }
-  };
-  document.addEventListener('keydown', onKey, true);
-  (document.querySelector('dialog[open]') || document.body).append(wrap);
-  // Desktop: next to the item. Phones: a sheet from the bottom (CSS).
-  if (anchor && !window.matchMedia('(max-width: 760px)').matches) {
-    const r = anchor.getBoundingClientRect(), m = menu.getBoundingClientRect();
-    const left = Math.max(8, Math.min(innerWidth - m.width - 8, r.right - m.width));
-    const top = r.bottom + 4 + m.height > innerHeight - 8 ? Math.max(8, r.top - m.height - 4) : r.bottom + 4;
-    menu.style.setProperty('--x', left + 'px'); menu.style.setProperty('--y', top + 'px');
-    menu.classList.add('at');
-  }
-  menu.querySelector('.tm-it')?.focus();
+    } },
+  ], anchor);
 }
 
 /**
