@@ -548,3 +548,16 @@ a.nav-it { text-decoration: none; color: inherit; }
 .pcard-n { font-size: 22px; font-weight: 700; color: var(--pc); font-variant-numeric: tabular-nums; line-height: 1; }
 .pcard-new { align-items: center; justify-content: center; flex-direction: row !important; border: 2px dashed var(--line) !important; background: transparent !important; color: var(--muted); cursor: pointer; font: inherit; min-height: 110px; box-shadow: none !important; }
 .pcard-new:hover { color: var(--accent); border-color: var(--accent) !important; }
+
+/* iPhone notch / home bar: index.html uses viewport-fit=cover, so keep controls out of the
+   unsafe areas (otherwise the to-do sheet's Done / Close / Delete sit under the status bar). */
+.top { padding-top: max(8px, env(safe-area-inset-top)); padding-left: max(8px, env(safe-area-inset-left)); padding-right: max(8px, env(safe-area-inset-right)); }
+dialog.sheet { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+dialog.sheet .sheet-top { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+.toasts { bottom: max(16px, calc(env(safe-area-inset-bottom) + 8px)); }
+@media (max-width: 760px) {
+  /* Bigger tap targets in the to-do sheet's top bar (44px is Apple's minimum). */
+  .sheet-top { gap: 4px; padding-top: 6px; padding-bottom: 6px; }
+  .sheet-top .icon-btn { width: 44px; height: 44px; }
+  .sheet-top .btn.primary { min-height: 40px; padding: 0 16px; }
+}

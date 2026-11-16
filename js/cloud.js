@@ -67,12 +67,20 @@ export class CloudStore {
     });
   }
 
-  async put(name, bytes) {
+  /**
+   * Store bytes. With `expect` (the version returned by get, or null for "did not exist"),
+   * refuses with code 'conflict' if another device saved in between, so the caller can
+   * merge again instead of overwriting that device's changes.
+   */
+  async put(name, bytes, expect) {
     const { F, db } = await this.f();
     bytes = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
     return this.call(async () => {
       const old = await F.getDoc(this.ref(F, db, name));
       const oldN = old.exists() ? (old.data().n || 0) : 0;
+      if (expect !== undefined && (old.exists() ? old.data().at || 0 : null) !== expect) {
+        throw Object.assign(new Error('Another device saved at the same time; merging again.'), { code: 'conflict' });
+      }
       const n = Math.max(1, Math.ceil(bytes.length / CHUNK));
       // Chunks first (a few per request, to stay under Firestore's request size), then the
       // record that says how many there are, then remove chunks left over from a larger version.

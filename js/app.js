@@ -238,6 +238,16 @@ window.addEventListener('online', () => {
 window.addEventListener('projectchange', () => { currentNoteEditor()?.editor.flush(); route(); });
 window.addEventListener('focus', () => vault?.dek && vault.sync());
 
-window.addEventListener('pagehide', () => currentNoteEditor()?.editor.flush());
+// Phones suspend or kill a backgrounded app without warning: save and push right away
+// instead of waiting for the 1.5 s sync timer.
+function flushNow() {
+  if (!vault?.dek) return;
+  currentNoteEditor()?.editor.flush();
+  document.querySelector('dialog.sheet[open]')?.dispatchEvent(new Event('flush'));
+  vault.saveLocal().catch(() => {});
+  if (vault.dirty && vault.remote) vault.sync();
+}
+window.addEventListener('pagehide', flushNow);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushNow(); });
 
 welcome();

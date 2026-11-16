@@ -70,10 +70,10 @@ export class Vault extends EventTarget {
         keyB64 = remoteKey;
       } else if (!keyB64) {
         keyB64 = C.newKeyB64();
-        await this.remote.put(KEY, new TextEncoder().encode(JSON.stringify({ v: 2, k: keyB64 })), 'application/json');
+        await this.remote.put(KEY, new TextEncoder().encode(JSON.stringify({ v: 2, k: keyB64 })));
       } else {
         // The cloud store is empty: upload this device's key so its data can sync back.
-        await this.remote.put(KEY, new TextEncoder().encode(JSON.stringify({ v: 2, k: keyB64 })), 'application/json');
+        await this.remote.put(KEY, new TextEncoder().encode(JSON.stringify({ v: 2, k: keyB64 })));
       }
     } else if (!keyB64) {
       if (this.account.mode === 'cloud') throw new Error('Nothing saved on this device yet. Open the planner once while online first.');
@@ -150,7 +150,7 @@ export class Vault extends EventTarget {
     return this.queue;
   }
 
-  async _sync() {
+  async _sync(attempt = 0) {
     if (!this.dek) return;
     if (!this.remote) { this.setStatus('local', 'Saved on this device'); return; }
     if (!navigator.onLine) { this.setStatus('offline', 'Offline — changes saved on this device'); return; }
@@ -162,7 +162,7 @@ export class Vault extends EventTarget {
       // Keep edits that happened while we were downloading.
       const { doc: finalDoc } = mergeDocs(this.doc, doc);
       this.doc = finalDoc;
-      if (changedRemote || !r) await this.remote.put(DOC, await C.encryptJson(this.dek, this.doc, 'doc'));
+      if (changedRemote || !r) await this.remote.put(DOC, await C.encryptJson(this.dek, this.doc, 'doc'), r ? r.version : null);
       if (changedLocal) {
         await this.saveLocal();
         this.dispatchEvent(new Event('change'));
@@ -171,6 +171,7 @@ export class Vault extends EventTarget {
       this.dirty = false;
       this.setStatus('synced', 'Synced');
     } catch (e) {
+      if (e.code === 'conflict' && attempt < 3) return this._sync(attempt + 1);
       if (e.code === 'auth') this.setStatus('auth', e.message);
       else if (!navigator.onLine) this.setStatus('offline', 'Offline — changes saved on this device');
       else this.setStatus('error', e.message);

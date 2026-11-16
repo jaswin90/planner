@@ -111,6 +111,7 @@ export function renderPlanner(root, vault) {
         cell.addEventListener('click', (e) => { if (e.target === cell || e.target.classList.contains('day-head')) openDay(d.date); });
         dropTarget(cell, (id) => {
           const t = vault.get(id);
+          if (!t) return;
           vault.update(id, { date: d.date, status: t.status === 'backlog' ? 'todo' : t.status });
           rerender();
         });
@@ -124,7 +125,7 @@ export function renderPlanner(root, vault) {
       h('div', { class: 'dv-label' }, 'Any time'),
       h('div', { class: 'dv-slot' }, untimed.map((t) => chip(t, true)),
         h('button', { class: 'add-inline', onclick: () => addOn(state.day) }, icon('plus'), 'Add')));
-    dropTarget(allDay, (id) => { const t = vault.get(id); vault.update(id, { date: state.day, time: null, status: t.status === 'backlog' ? 'todo' : t.status }); rerender(); });
+    dropTarget(allDay, (id) => { const t = vault.get(id); if (!t) return; vault.update(id, { date: state.day, time: null, status: t.status === 'backlog' ? 'todo' : t.status }); rerender(); });
     body = h('div', { class: 'dayview' }, allDay, timeline(list),
       h('p', { class: 'muted small' }, 'Drag a sticky onto the timeline to plan it; drag a block to move it, or its bottom edge to change how long it takes. Double-click to add a task.'));
   }
@@ -153,6 +154,7 @@ export function renderPlanner(root, vault) {
       if (!id) return;
       e.preventDefault(); e.stopPropagation();
       const t = vault.get(id);
+      if (!t) return;
       const offset = Number(e.dataTransfer.getData('text/x-planner-offset') || 0);
       const m = Math.max(0, Math.min(24 * 60 - SNAP, minuteAt(e.clientY - offset)));
       vault.update(id, { date: state.day, time: fromMin(m), status: t.status === 'backlog' ? 'todo' : t.status });
@@ -374,6 +376,7 @@ export function openTask(vault, id, after, { isNew = false } = {}) {
         h('h3', { class: 'small-h' }, 'All attachments in this to-do'),
         attBox)));
   dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+  dlg.addEventListener('flush', () => editor.flush());
   dlg.addEventListener('close', () => {
     editor.flush();
     dlg.remove();
