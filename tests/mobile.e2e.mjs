@@ -53,6 +53,59 @@ try {
   await page.locator('.m-week').waitFor();
   assert.equal(await page.locator('.planner .side').count(), 0, 'no desktop sidebar on phones');
   await page.locator('.dv-event', { hasText: 'Standup' }).waitFor();
+
+  // Touch gestures on timeline blocks (64 px = 1 hour on phones)
+  await page.locator('.fab').click();
+  await page.locator('.qa-title').fill('Workout');
+  await page.locator('.qa-row input[type=time]').fill('10:00');
+  await page.locator('.qa-foot .btn.primary').click();
+  const ev = page.locator('.dv-event', { hasText: 'Workout' });
+  await ev.waitFor();
+  const timeIs = (txt) => page.waitForFunction((x) => [...document.querySelectorAll('.dv-event')].find((e) => e.textContent.includes('Workout'))?.querySelector('.ev-time').textContent === x, txt, { timeout: 4000 })
+    .catch(async () => { throw new Error(`expected ${txt}, got ${await ev.locator('.ev-time').textContent()}`); });
+  const cdp = await ctx.newCDPSession(page);
+  const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
+  const touchDrag = async (x, y, dx, dy, hold = 0) => {
+    await touch('touchStart', x, y);
+    if (hold) await page.waitForTimeout(hold);
+    for (let i = 1; i <= 8; i++) { await touch('touchMove', x + (dx * i) / 8, y + (dy * i) / 8); await page.waitForTimeout(16); }
+    await touch('touchEnd');
+    await page.waitForTimeout(150);
+  };
+  await ev.evaluate((e) => e.scrollIntoView({ block: 'center' }));
+  await timeIs('10:00–11:00');
+  let bb = await ev.boundingBox();
+  // A quick swipe over a block scrolls the page; it doesn't move the block
+  await touchDrag(bb.x + 40, bb.y + bb.height / 2, 0, -60);
+  await timeIs('10:00–11:00');
+  // Press and hold, then drag: moves it
+  bb = await ev.boundingBox();
+  await touchDrag(bb.x + 40, bb.y + bb.height / 2, 0, 64, 500);
+  await timeIs('11:00–12:00');
+  assert.equal(await page.locator('dialog.sheet').count(), 0, 'a drag does not open the task');
+  // Edges: drag the bottom down 30 min, then the top up 30 min (no hold needed)
+  bb = await ev.boundingBox();
+  await touchDrag(bb.x + 40, bb.y + bb.height - 5, 0, 32);
+  await timeIs('11:00–12:30');
+  bb = await ev.boundingBox();
+  await touchDrag(bb.x + 40, bb.y + 5, 0, -32);
+  await timeIs('10:30–12:30');
+  // Hold and let go without moving: the task menu
+  bb = await ev.boundingBox();
+  await touch('touchStart', bb.x + 40, bb.y + bb.height / 2); await page.waitForTimeout(500); await touch('touchEnd');
+  await page.locator('.tmenu .tm-it', { hasText: 'Mark done' }).waitFor();
+  await page.keyboard.press('Escape');
+  // Hold and drag onto tomorrow in the week strip: moves it to that day at the same time
+  bb = await ev.boundingBox();
+  const dayIdx = (new Date().getDay() + 6) % 7;
+  const target = page.locator('.m-wd').nth(dayIdx === 6 ? 5 : dayIdx + 1);
+  const tb = await target.boundingBox();
+  await touchDrag(bb.x + 40, bb.y + bb.height / 2, tb.x + tb.width / 2 - bb.x - 40, tb.y + tb.height / 2 - bb.y - bb.height / 2, 500);
+  await page.getByText(/^Moved to /).waitFor();
+  await ev.waitFor({ state: 'detached' });
+  await target.click();
+  await timeIs('10:30–12:30');
+  await page.locator('.m-wd.today').click();
   await page.locator('.m-wd').nth(((new Date().getDay() + 6) % 7 + 1) % 7).click();
   await page.locator('.m-seg button', { hasText: 'Month' }).click();
   await page.locator('.m-month .m-day.on').waitFor();

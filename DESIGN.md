@@ -35,7 +35,11 @@ Browser ──(AES-GCM ciphertext only)──> Google Drive appDataFolder   (syn
 Same data and code, different layout: a large page title with an account button (sync, settings,
 sign out), bottom tabs **Today · Planner · Notes · Projects**, and a **+** button. The planner shows a
 week strip and the day's list + timeline (or a month of dots), with Unplanned / Doing / Backlog / Done
-as chips that open a sheet. Drag and drop is replaced by the task menu (⋯, long-press, or right-click
+as chips that open a sheet. Timeline blocks can be moved (drag; on touch, press and hold first so the page still scrolls)
+and resized from either edge, with the mouse or a finger; the page scrolls when dragging near the edge,
+Escape cancels, Alt+↑/↓ moves by 15 min and Shift+Alt+↑/↓ changes the end. A block can be dropped on a
+sidebar section (status), on "Any time" (no time) or on a day of the phone week strip (same time, that day).
+Elsewhere, drag and drop is replaced by the task menu (⋯, long-press, or right-click
 on desktop): Mark done, Today, Tomorrow, Pick date, Doing, Backlog, Delete.
 | `js/notes.js` | Three collapsible panes: projects, sticky note list, note |
 | `js/settings.js` | Projects/notebooks, account, backup, delete |

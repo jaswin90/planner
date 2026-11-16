@@ -85,6 +85,38 @@ try {
   await page.locator('.dv-event', { hasText: 'Call bank' }).waitFor();
   if (shots) await page.screenshot({ path: `${shots}/3-day.png` });
 
+  // Timeline blocks with the mouse: move, then stretch the bottom edge, then the top edge (48 px = 1 hour)
+  const ev = page.locator('.dv-event', { hasText: 'Call bank' });
+  const timeIs = (txt) => page.waitForFunction((x) => document.querySelector('.dv-event .ev-time')?.textContent === x, txt, { timeout: 4000 })
+    .catch(async () => { throw new Error(`expected ${txt}, got ${await page.locator('.dv-event .ev-time').allTextContents()}`); });
+  const mouseDrag = async (x, y, dy) => {
+    await page.mouse.move(x, y); await page.mouse.down();
+    for (let i = 1; i <= 6; i++) await page.mouse.move(x, y + (dy * i) / 6);
+    await page.mouse.up();
+  };
+  await timeIs('10:30–11:30');
+  let bb = await ev.boundingBox();
+  await mouseDrag(bb.x + bb.width / 3, bb.y + bb.height / 2, 96);
+  await timeIs('12:30–13:30');
+  bb = await ev.boundingBox();
+  await mouseDrag(bb.x + bb.width / 3, bb.y + bb.height - 3, 24);
+  await timeIs('12:30–14:00');
+  bb = await ev.boundingBox();
+  await mouseDrag(bb.x + bb.width / 3, bb.y + 3, -48);
+  await timeIs('11:30–14:00');
+  assert.equal(await page.locator('dialog.sheet').count(), 0, 'a drag does not open the task');
+  // Keyboard: Alt+Down moves 15 minutes, Shift+Alt+Up ends 15 minutes earlier
+  await ev.focus(); await page.keyboard.press('Alt+ArrowDown');
+  await timeIs('11:45–14:15');
+  await ev.focus(); await page.keyboard.press('Shift+Alt+ArrowUp');
+  await timeIs('11:45–14:00');
+  // Escape during a drag puts it back
+  bb = await ev.boundingBox();
+  await page.mouse.move(bb.x + bb.width / 3, bb.y + bb.height / 2); await page.mouse.down();
+  await page.mouse.move(bb.x + bb.width / 3, bb.y + bb.height / 2 + 60, { steps: 4 });
+  await page.keyboard.press('Escape'); await page.mouse.up();
+  await timeIs('11:45–14:00');
+
   // Task dialog with notes
   await page.locator('.dv-event', { hasText: 'Call bank' }).click();
   await page.locator('dialog .rte').click();
@@ -105,6 +137,16 @@ try {
   await page.locator('.dv-event', { hasText: 'Call bank' }).click({ button: 'right' });
   await page.locator('.tmenu .tm-it', { hasText: 'Doing' }).click();
   await page.locator('.sec-doing .sticky', { hasText: 'Call bank' }).waitFor();
+  // Dragging a block onto a sidebar section changes its status (it keeps its time)
+  bb = await ev.boundingBox();
+  const sec = await page.locator('.sec-head', { hasText: 'Done' }).boundingBox();
+  await page.mouse.move(bb.x + 10, bb.y + 10); await page.mouse.down();
+  for (let i = 1; i <= 8; i++) await page.mouse.move(bb.x + 10 + ((sec.x + 20 - bb.x - 10) * i) / 8, bb.y + 10 + ((sec.y + 8 - bb.y - 10) * i) / 8);
+  await page.mouse.up();
+  await page.locator('.dv-event.done', { hasText: 'Call bank' }).waitFor();
+  await page.locator('.dv-event', { hasText: 'Call bank' }).click({ button: 'right' });
+  await page.locator('.tmenu .tm-it', { hasText: 'Doing' }).click();
+  await page.locator('.dv-event:not(.done)', { hasText: 'Call bank' }).waitFor();
 
   // Notes: create a rich note with photo and PDF
   await page.locator('nav.tabs a', { hasText: 'Notes' }).click();

@@ -14,6 +14,7 @@ const state = { y: new Date().getFullYear(), m: new Date().getMonth(), day: isoD
 
 export function renderPlanner(root, vault) {
   clear(root);
+  HOUR_PX = isPhone() ? 64 : 48; PXM = HOUR_PX / 60;
   const project = currentProject(vault);
   const tasks = liveItems(vault.doc, 'task').filter((t) => !project || t.projectId === project);
   const rerender = () => renderPlanner(root, vault);
@@ -129,7 +130,7 @@ export function renderPlanner(root, vault) {
         h('button', { class: 'add-inline', onclick: () => addOn(state.day) }, icon('plus'), 'Add')));
     dropTarget(allDay, (id) => { const t = vault.get(id); if (!t) return; vault.update(id, { date: state.day, time: null, status: t.status === 'backlog' ? 'todo' : t.status }); rerender(); });
     body = h('div', { class: 'dayview' }, allDay, timeline(list),
-      h('p', { class: 'muted small' }, 'Drag a sticky onto the timeline to plan it; drag a block to move it, or its bottom edge to change how long it takes. Double-click to add a task.'));
+      h('p', { class: 'muted small' }, 'Drag a sticky onto the timeline to plan it. Drag a block to move it, or its top or bottom edge to change when it starts or ends; drop it on a section on the left to change its status. Double-click to add a task.'));
   }
 
   /** Day timeline: each timed task is a block from its start to its end, positioned by minute. */
@@ -186,44 +187,148 @@ export function renderPlanner(root, vault) {
     function block({ t, start, end, col, n }) {
       const p = t.projectId && vault.get(t.projectId);
       const label = h('span', { class: 'ev-time' }, rangeLabel(t));
+      const name = t.title || 'Untitled';
       const el = h('div', {
-        class: `dv-event st-${sectionOf(t)}${t.status === 'done' ? ' done' : ''}`, draggable: 'true', tabindex: '0', role: 'button',
-        dataset: { id: t.id }, title: `${t.title || 'Untitled'} (${rangeLabel(t)})`,
+        class: `dv-event st-${sectionOf(t)}${t.status === 'done' ? ' done' : ''}`, tabindex: '0', role: 'button',
+        dataset: { id: t.id }, title: `${name} (${rangeLabel(t)})`,
+        'aria-label': `${name}, ${rangeLabel(t)}. Alt+arrows move it, Shift+Alt+arrows change the end.`,
         vars: { '--top': (start - base) * PXM + 'px', '--h': Math.max(SNAP, end - start) * PXM + 'px', '--col': String(col), '--n': String(n), ...(p ? { '--pc': p.color } : {}) },
-      }, h('span', { class: 'ev-title' }, t.title || 'Untitled'), label, p && h('span', { class: 'pdot' }, p.name));
-      const handle = h('div', { class: 'ev-resize', title: 'Drag to change how long it takes', 'aria-hidden': 'true' });
-      el.append(handle);
-      withMenu(el, vault, t.id, rerender);
-      el.addEventListener('dragstart', (e) => {
-        e.dataTransfer.setData('text/x-planner-task', t.id);
-        e.dataTransfer.setData('text/x-planner-offset', String(e.clientY - el.getBoundingClientRect().top));
-        e.dataTransfer.effectAllowed = 'move'; el.classList.add('dragging');
+      }, h('span', { class: 'ev-title' }, name), label, p && h('span', { class: 'pdot' }, p.name));
+      // Both edges can be dragged: the top changes the start (the end stays), the bottom changes the end.
+      const topH = h('div', { class: 'ev-resize ev-top', title: 'Drag to change the start', 'aria-hidden': 'true' });
+      const botH = h('div', { class: 'ev-resize ev-bottom', title: 'Drag to change the end', 'aria-hidden': 'true' });
+      if (end - start >= 30) el.append(topH);
+      el.append(botH);
+      withMenu(el, vault, t.id, rerender, { press: false });
+
+      let s = start, e = end, suppress = false;
+      const draw = () => {
+        el.style.setProperty('--top', (s - base) * PXM + 'px');
+        el.style.setProperty('--h', Math.max(SNAP, e - s) * PXM + 'px');
+        label.textContent = `${fromMin(s)}–${endLabel(e)}`;
+      };
+      const save = () => {
+        if (s !== start || e !== end) vault.update(t.id, { time: fromMin(s), dur: e - s });
+        rerender();
+      };
+      const quiet = () => { suppress = true; setTimeout(() => { suppress = false; }, 350); };
+      el.addEventListener('click', (ev) => { ev.stopPropagation(); if (suppress) return; openTask(vault, t.id, rerender); });
+      el.addEventListener('contextmenu', (ev) => { ev.preventDefault(); taskMenu(vault, t.id, el, rerender); });
+      el.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') return openTask(vault, t.id, rerender);
+        if (!ev.altKey || (ev.key !== 'ArrowUp' && ev.key !== 'ArrowDown')) return;
+        ev.preventDefault();
+        const d = ev.key === 'ArrowUp' ? -SNAP : SNAP;
+        if (ev.shiftKey) e = Math.max(s + SNAP, Math.min(24 * 60, e + d));
+        else { const len = e - s; s = Math.max(0, Math.min(24 * 60 - len, s + d)); e = s + len; }
+        save();
+        root.querySelector(`.dv-event[data-id="${t.id}"]`)?.focus();
       });
-      el.addEventListener('dragend', () => el.classList.remove('dragging'));
-      let resized = false;
-      el.addEventListener('click', (e) => { e.stopPropagation(); if (resized) { resized = false; return; } openTask(vault, t.id, rerender); });
-      el.addEventListener('keydown', (e) => { if (e.key === 'Enter') openTask(vault, t.id, rerender); });
-      // Resize: drag the bottom edge; snaps to 15 minutes; never shorter than 15 or past midnight.
-      handle.addEventListener('mousedown', (e) => e.stopPropagation());
-      handle.addEventListener('pointerdown', (e) => {
-        e.preventDefault(); e.stopPropagation();
-        el.draggable = false; handle.setPointerCapture(e.pointerId); el.classList.add('resizing');
-        const top = el.getBoundingClientRect().top;
-        let dur = end - start;
-        const move = (ev) => {
-          dur = Math.max(SNAP, Math.min(24 * 60 - start, Math.round((ev.clientY - top) / PXM / SNAP) * SNAP));
-          el.style.setProperty('--h', dur * PXM + 'px');
-          label.textContent = `${t.time}–${endLabel(start + dur)}`;
-        };
-        const up = () => {
-          handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', up); handle.removeEventListener('pointercancel', up);
-          el.classList.remove('resizing'); el.draggable = true; resized = true;
-          setTimeout(() => { resized = false; }, 300);
-          if (dur !== end - start) { vault.update(t.id, { dur }); rerender(); }
-        };
-        handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', up); handle.addEventListener('pointercancel', up);
+
+      // Resize from either edge: works the same with a mouse, a pen or a finger.
+      for (const [handle, edge] of [[topH, 'top'], [botH, 'bottom']]) {
+        handle.addEventListener('pointerdown', (ev) => {
+          if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+          ev.preventDefault(); ev.stopPropagation();
+          handle.setPointerCapture(ev.pointerId);
+          el.classList.add('resizing');
+          follow(ev, (y) => {
+            const m = snapAt(y);
+            if (edge === 'top') s = Math.max(base, Math.min(e - SNAP, m));
+            else e = Math.max(s + SNAP, Math.min(24 * 60, m));
+            draw();
+          }, (cancelled) => {
+            el.classList.remove('resizing'); quiet();
+            if (cancelled) { s = start; e = end; draw(); } else save();
+          });
+        });
+      }
+
+      // While a finger holds the block: no page scrolling, and no tap afterwards (it would land on
+      // whatever is under the finger by then, e.g. the menu's backdrop).
+      let held = false, heldTimer = 0;
+      el.addEventListener('touchmove', (te) => { if (held) te.preventDefault(); }, { passive: false });
+      el.addEventListener('touchend', (te) => { if (held) te.preventDefault(); }, { passive: false });
+      // Move: a mouse drags straight away; a finger presses and holds first (so the page still scrolls),
+      // then drags. Holding and letting go without moving opens the task menu.
+      el.addEventListener('pointerdown', (ev) => {
+        if ((ev.pointerType === 'mouse' && ev.button !== 0) || ev.target.closest('.ev-resize, .more-btn')) return;
+        const touch = ev.pointerType !== 'mouse';
+        clearTimeout(heldTimer); held = false;
+        const x0 = ev.clientX, y0 = ev.clientY;
+        const grab = rawMinute(y0) - start;
+        let lifted = false, moved = false, over = null;
+        const len = end - start;
+        const lift = () => { lifted = true; held = true; el.classList.add('moving'); if (touch) navigator.vibrate?.(10); };
+        const timer = touch ? setTimeout(lift, 350) : null;
+        follow(ev, (y, x) => {
+          if (!lifted) {
+            if (Math.hypot(x - x0, y - y0) < (touch ? 8 : 4)) return;
+            if (touch) return 'cancel'; // moved before the hold: it's a scroll
+            lift();
+          }
+          moved = true;
+          const target = dropAt(x, y, el);
+          if (target !== over) { over?.classList.remove('over'); over = target; over?.classList.add('over'); }
+          s = Math.max(base, Math.min(24 * 60 - len, snapAt(y - grab * PXM))); e = s + len;
+          draw();
+        }, (cancelled) => {
+          clearTimeout(timer);
+          heldTimer = setTimeout(() => { held = false; }, 400); // touchend comes after pointerup
+          over?.classList.remove('over');
+          el.classList.remove('moving');
+          if (!lifted) return;
+          if (cancelled) { s = start; e = end; draw(); return; }
+          quiet();
+          if (!moved) { if (touch) taskMenu(vault, t.id, el, rerender); return; }
+          if (over?._drop) { over._drop(t.id); return; }
+          save();
+        }, { canScroll: () => !over }); // hovering a drop target (e.g. the pinned week strip): hold still
       });
       return el;
+    }
+
+    /** Minute under a screen y, snapped to 15 minutes. */
+    function snapAt(y) { return base + Math.round((y - grid.getBoundingClientRect().top) / PXM / SNAP) * SNAP; }
+    function rawMinute(y) { return base + (y - grid.getBoundingClientRect().top) / PXM; }
+
+    /**
+     * Track one pointer until it lifts: onMove(y, x) on every move (return 'cancel' to let go),
+     * scrolling the page when the pointer nears the top or bottom edge. onEnd(cancelled).
+     */
+    function follow(down, onMove, onEnd, { canScroll = () => true } = {}) {
+      const id = down.pointerId;
+      let x = down.clientX, y = down.clientY, raf = 0, done = false, armed = false;
+      const sc = scroller(grid);
+      // Near the top or bottom of the scroll area the page scrolls, faster the closer to the edge;
+      // only once the pointer has really moved, so grabbing something near the edge doesn't run away.
+      const tick = () => {
+        raf = 0;
+        const r = sc.getBoundingClientRect(), edge = 56;
+        const depth = y < r.top + edge ? y - (r.top + edge) : y > r.bottom - edge ? y - (r.bottom - edge) : 0;
+        if (!armed || !depth || !canScroll()) return;
+        const before = sc.scrollTop;
+        sc.scrollTop += Math.sign(depth) * Math.min(8, Math.ceil(Math.abs(depth) / 7));
+        if (sc.scrollTop !== before && onMove(y, x) === 'cancel') return end(true);
+        raf = requestAnimationFrame(tick);
+      };
+      const move = (ev) => {
+        if (ev.pointerId !== id) return;
+        x = ev.clientX; y = ev.clientY;
+        if (Math.abs(y - down.clientY) > 16) armed = true;
+        if (onMove(y, x) === 'cancel') end(true); else if (!raf) raf = requestAnimationFrame(tick);
+      };
+      const up = (ev) => { if (ev.pointerId === id) end(ev.type === 'pointercancel'); };
+      const key = (ev) => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); end(true); } };
+      function end(cancelled) {
+        if (done) return; done = true;
+        cancelAnimationFrame(raf);
+        window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
+        window.removeEventListener('pointercancel', up); window.removeEventListener('keydown', key, true);
+        onEnd(cancelled);
+      }
+      window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+      window.addEventListener('pointercancel', up); window.addEventListener('keydown', key, true);
     }
   }
 
@@ -282,8 +387,12 @@ export function renderPlanner(root, vault) {
       const monday = addDays(state.day, -((x.getDay() + 6) % 7));
       const week = h('div', { class: 'm-week' }, [0, 1, 2, 3, 4, 5, 6].map((i) => {
         const d = addDays(monday, i);
-        return h('button', { class: `m-wd${d === state.day ? ' on' : ''}${d === today ? ' today' : ''}`, 'aria-pressed': String(d === state.day), 'aria-label': fmt(d, long), onclick: () => { setDay(d); rerender(); } },
+        const b = h('button', { class: `m-wd${d === state.day ? ' on' : ''}${d === today ? ' today' : ''}`, 'aria-pressed': String(d === state.day), 'aria-label': fmt(d, long), onclick: () => { setDay(d); rerender(); } },
           h('span', {}, fmt(d, { weekday: 'short' })), h('b', {}, String(Number(d.slice(8)))), h('i', { class: `dot${open(byDate.get(d) || []) ? '' : ' none'}` }));
+        // Drop a timeline block here to move it to that day (same time).
+        b.classList.add('droppable');
+        b._drop = (id) => { const x = vault.get(id); if (!x) return; vault.update(id, { date: d, status: x.status === 'backlog' ? 'todo' : x.status }); toast(`Moved to ${fmt(d, { weekday: 'short', day: 'numeric', month: 'short' })}`, 'ok', 2000); rerender(); };
+        return b;
       }));
       swipe(week, jump);
       const list = byDate.get(state.day) || [];
@@ -291,7 +400,10 @@ export function renderPlanner(root, vault) {
       const any = h('section', { class: 'hcard m-card' },
         h('div', { class: 'hcard-h' }, h('h2', {}, 'Any time'), list.length > 0 && h('span', { class: 'muted small' }, `${done} of ${list.length} done`)),
         rows(list.filter((t) => !t.time), list.length ? 'Everything on this day has a time.' : 'Nothing planned. Tap + to add a task.'));
-      return h('div', { class: 'mplanner' }, bar, week, chips, any, timeline(list));
+      // Drop a timeline block here to take its time off.
+      dropTarget(any, (id) => { if (vault.get(id)) { vault.update(id, { time: null }); rerender(); } });
+      return h('div', { class: 'mplanner' }, bar, week, chips, any, timeline(list),
+        h('p', { class: 'muted small m-hint' }, 'Press and hold a block, then drag to move it (onto another day above, too). Drag its top or bottom edge to change the start or end.'));
     }
     const grid = h('div', { class: 'm-month' }, ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((w) => h('div', { class: 'm-wh', 'aria-hidden': 'true' }, w)),
       monthGrid(state.y, state.m).map((d) => {
@@ -339,7 +451,9 @@ function swipe(el, fn) {
 export function plannerDay() { return state.day; }
 
 // ---- time ranges: a task with a time runs for `dur` minutes (default 60) ----
-const HOUR_PX = 48, PXM = HOUR_PX / 60, SNAP = 15;
+// Phones get taller hours so 15-minute steps are easy to hit with a finger.
+let HOUR_PX = 48, PXM = HOUR_PX / 60;
+const SNAP = 15;
 function toMin(hhmm) { return Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5)); }
 function fromMin(m) { m = Math.max(0, Math.min(24 * 60 - 1, Math.round(m))); return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); }
 function endLabel(m) { return m >= 24 * 60 ? '24:00' : fromMin(m); }
@@ -381,7 +495,26 @@ function dragSource(el, id) {
   el.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/x-planner-task', id); e.dataTransfer.effectAllowed = 'move'; el.classList.add('dragging'); });
   el.addEventListener('dragend', () => el.classList.remove('dragging'));
 }
+/** The drop target (sidebar section, "Any time", a day in the week strip…) under a point, ignoring `self`. */
+function dropAt(x, y, self) {
+  for (const n of document.elementsFromPoint(x, y)) {
+    if (self.contains(n)) continue;
+    const d = n.closest?.('.droppable');
+    if (d) return d;
+    if (n.closest?.('.dv-grid')) return null; // over the timeline itself: just move in time
+  }
+  return null;
+}
+function scroller(el) {
+  for (let n = el.parentElement; n; n = n.parentElement) {
+    const o = getComputedStyle(n).overflowY;
+    if ((o === 'auto' || o === 'scroll') && n.scrollHeight > n.clientHeight) return n;
+  }
+  return document.scrollingElement;
+}
 function dropTarget(el, onDrop) {
+  el.classList.add('droppable');
+  el._drop = onDrop;
   el.addEventListener('dragover', (e) => { if (e.dataTransfer.types.includes('text/x-planner-task')) { e.preventDefault(); el.classList.add('over'); } });
   el.addEventListener('dragleave', (e) => { if (!el.contains(e.relatedTarget)) el.classList.remove('over'); });
   el.addEventListener('drop', (e) => {
@@ -392,14 +525,14 @@ function dropTarget(el, onDrop) {
 }
 
 /** Adds a ⋯ button (always visible on touch screens) plus long-press / right-click, opening taskMenu. */
-export function withMenu(el, vault, id, after) {
+export function withMenu(el, vault, id, after, { press = true } = {}) {
   const b = h('span', { class: 'more-btn', role: 'button', tabindex: '0', title: 'More actions', 'aria-label': 'More actions', 'aria-haspopup': 'menu' }, icon('more'));
   const open = (e) => { e.stopPropagation(); e.preventDefault(); taskMenu(vault, id, b, after); };
   b.addEventListener('click', open);
   b.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') open(e); });
   b.addEventListener('pointerdown', (e) => e.stopPropagation());
   el.append(b);
-  longPress(el, () => taskMenu(vault, id, el, after));
+  if (press) longPress(el, () => taskMenu(vault, id, el, after));
   return el;
 }
 

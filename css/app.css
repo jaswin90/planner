@@ -711,3 +711,27 @@ dialog.bsheet[open] { display: flex; flex-direction: column; }
 }
 .toasts { pointer-events: none; }
 .toast.ok { background: #25734a; }
+
+/* Timeline blocks: move (drag the block) and resize from both edges, mouse or touch */
+.dv-event { user-select: none; -webkit-user-select: none; touch-action: pan-y; }
+.dv-event.moving { z-index: 4; cursor: grabbing; box-shadow: 0 0 0 2px var(--accent), 0 10px 24px rgba(0,0,0,.25); transform: scale(1.02); opacity: .95; }
+.dv-event.resizing { z-index: 4; }
+.ev-resize { position: absolute; left: 0; right: 0; height: 8px; cursor: ns-resize; touch-action: none; z-index: 1; }
+.ev-resize.ev-top { top: 0; bottom: auto; }
+.ev-resize.ev-bottom { bottom: 0; top: auto; }
+.ev-resize::after { content: ""; position: absolute; left: 50%; width: 24px; height: 3px; margin-left: -12px; border-radius: 2px; background: rgba(0,0,0,.25); opacity: 0; transition: opacity .12s; }
+.ev-top::after { top: 2px; bottom: auto; } .ev-bottom::after { bottom: 2px; top: auto; }
+.dv-event:is(:hover, :focus-visible, .resizing, .moving) .ev-resize::after { opacity: 1; }
+.dv-event .more-btn { z-index: 2; }
+@media (hover: none) {
+  .ev-resize { height: 14px; }
+  .ev-resize::after { opacity: .8; width: 30px; }
+  .dv-event { padding-top: 6px; padding-bottom: 12px; }
+}
+.droppable.over { outline: 2px dashed var(--accent); outline-offset: -2px; }
+.m-wd.droppable.over { outline-offset: 0; }
+.m-hint { margin: 0 4px; }
+@media (max-width: 760px) {
+  /* The week strip stays in view while the timeline scrolls, so a block can be dropped on any day. */
+  .m-week { position: sticky; top: 0; z-index: 5; background: var(--bg); margin: 0 -12px; padding: 4px 12px 6px; box-shadow: 0 6px 8px -8px rgba(0,0,0,.25); }
+}
