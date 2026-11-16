@@ -24,6 +24,17 @@ function append(el, children) {
   }
 }
 
+/**
+ * Redraw `root` without losing where the person had scrolled to: the page itself and any inner
+ * scrolling panes named in `panes` (CSS selectors), which are found again after the redraw.
+ */
+export function keepScroll(root, panes, draw) {
+  const before = [root.scrollTop, ...panes.map((q) => root.querySelector(q)?.scrollTop || 0)];
+  draw();
+  root.scrollTop = before[0];
+  panes.forEach((q, i) => { const el = root.querySelector(q); if (el) el.scrollTop = before[i + 1]; });
+}
+
 export function clear(el) { while (el.firstChild) el.firstChild.remove(); return el; }
 
 export function icon(name) {

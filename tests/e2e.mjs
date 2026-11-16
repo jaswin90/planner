@@ -80,6 +80,8 @@ try {
   // Day view: open that day, drag "Call bank" to 10:00
   await page.locator(`.day[data-date="${date}"] .dnum`).click();
   await page.locator('.dayview').waitFor();
+  // Not today: no current-time line; today's Day view has one with the time
+  assert.equal(await page.locator('.dv-now').count(), date === new Date().toISOString().slice(0, 10) ? 1 : 0);
   await page.locator('.dv-allday .chip', { hasText: 'Write report' }).waitFor();
   await page.locator('.sticky', { hasText: 'Call bank' }).dragTo(page.locator('.dv-hour[data-hour="10"]'));
   await page.locator('.dv-event', { hasText: 'Call bank' }).waitFor();

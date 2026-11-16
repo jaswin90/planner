@@ -2,7 +2,7 @@
 // recent notes and every project at a glance. Everything links into Calendar,
 // Projects or Notes.
 
-import { h, icon, clear, setTitle, toast } from './ui.js';
+import { h, icon, clear, setTitle, toast, keepScroll } from './ui.js';
 import { liveItems, isoDate, htmlToText, sectionOf } from './model.js';
 import { openTask, durOf, withMenu } from './planner.js';
 import { projects, newProject } from './projects.js';
@@ -10,7 +10,11 @@ import { projects, newProject } from './projects.js';
 /**
  * mode: 'full' (desktop landing), 'today' (phone Today tab), 'projects' (phone Projects tab).
  */
-export function renderHome(root, vault, { mode = 'full' } = {}) {
+export function renderHome(root, vault, opts = {}) {
+  keepScroll(root, [], () => draw(root, vault, opts));
+}
+
+function draw(root, vault, { mode = 'full' } = {}) {
   clear(root);
   const rerender = () => renderHome(root, vault, { mode });
   const today = isoDate(new Date());

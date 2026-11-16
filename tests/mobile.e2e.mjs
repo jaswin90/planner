@@ -54,6 +54,9 @@ try {
   assert.equal(await page.locator('.planner .side').count(), 0, 'no desktop sidebar on phones');
   await page.locator('.dv-event', { hasText: 'Standup' }).waitFor();
 
+  // Current time: a labelled line on today's timeline
+  await page.locator('.dv-now .dv-now-t').waitFor();
+  assert.match(await page.locator('.dv-now-t').textContent(), /^\d\d:\d\d$/);
   // Touch gestures on timeline blocks (64 px = 1 hour on phones)
   await page.locator('.fab').click();
   await page.locator('.qa-title').fill('Workout');

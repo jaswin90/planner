@@ -2,7 +2,7 @@
 // into Unplanned / Doing / Planned / Backlog / Done. Drag a sticky onto a
 // day to plan it; drag it onto a section to change its state.
 
-import { h, icon, clear, confirmDialog, longPress, toast, actionSheet, isPhone, setTitle, bottomSheet } from './ui.js';
+import { h, icon, clear, confirmDialog, longPress, toast, actionSheet, isPhone, setTitle, bottomSheet, keepScroll } from './ui.js';
 import { SECTIONS, sectionOf, liveItems, monthGrid, isoDate, htmlToText } from './model.js';
 import { createEditor, attachmentList } from './editor.js';
 import { currentProject, projectSelect } from './projects.js';
@@ -13,6 +13,10 @@ const phone = isPhone();
 const state = { y: new Date().getFullYear(), m: new Date().getMonth(), day: isoDate(new Date()), mode: phone ? 'day' : 'month', collapsed: new Set(phone ? ['done', 'backlog'] : ['done']) };
 
 export function renderPlanner(root, vault) {
+  keepScroll(root, ['.cal-wrap', '.side'], () => draw(root, vault));
+}
+
+function draw(root, vault) {
   clear(root);
   HOUR_PX = isPhone() ? 64 : 48; PXM = HOUR_PX / 60;
   const project = currentProject(vault);
@@ -179,8 +183,21 @@ export function renderPlanner(root, vault) {
     const layer = h('div', { class: 'dv-events' }, cols.map((c) => block(c)));
     grid.append(layer);
     if (state.day === isoDate(new Date())) {
-      const now = new Date(), m = now.getHours() * 60 + now.getMinutes();
-      if (m >= base) grid.append(h('div', { class: 'dv-now', 'aria-hidden': 'true', vars: { '--top': (m - base) * PXM + 'px' } }));
+      const now = h('div', { class: 'dv-now', role: 'img', dataset: { base: String(base), pxm: String(PXM), day: state.day } }, h('span', { class: 'dv-now-t' }));
+      placeNow(now);
+      grid.append(now);
+      // The first time today's Day view opens, scroll so "now" sits a third of the way down.
+      const key = state.day + state.mode;
+      if (state.scrolledFor !== key) {
+        state.scrolledFor = key;
+        requestAnimationFrame(() => {
+          const line = root.querySelector('.dv-now'); // the planner may have been redrawn since
+          if (!line) return;
+          const sc = scroller(line);
+          const y = line.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop;
+          sc.scrollTop = Math.max(0, y - sc.clientHeight / 3);
+        });
+      }
     }
     return grid;
 
@@ -445,6 +462,26 @@ function swipe(el, fn) {
     if (Math.abs(dx) > 50 && Math.abs(dy) < 40) { el.addEventListener('click', (c) => { c.stopPropagation(); c.preventDefault(); }, { capture: true, once: true }); fn(dx < 0 ? 1 : -1); }
   });
   el.addEventListener('pointercancel', () => { x0 = null; });
+}
+
+/** Position the current-time line and its label (called on render and every minute). */
+function placeNow(el) {
+  const d = new Date(), m = d.getHours() * 60 + d.getMinutes();
+  const base = Number(el.dataset.base), pxm = Number(el.dataset.pxm);
+  el.hidden = m < base;
+  el.style.setProperty('--top', (m - base) * pxm + 'px');
+  const label = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  el.firstChild.textContent = label;
+  el.setAttribute('aria-label', `Now, ${label}`);
+}
+if (typeof window !== 'undefined') {
+  setInterval(() => {
+    for (const el of document.querySelectorAll('.dv-now')) {
+      // Past midnight the line belongs to yesterday's view: redraw the planner instead.
+      if (el.closest('.dv-grid') && el.dataset.day && el.dataset.day !== isoDate(new Date())) el.remove();
+      else placeNow(el);
+    }
+  }, 30_000);
 }
 
 /** The day the planner is showing (new tasks from the + button go there). */

@@ -213,6 +213,9 @@ function route() {
   const fab = app.querySelector('.fab');
   if (fab) fab.setAttribute('aria-label', name === 'notes' ? 'New note' : 'Add a task'), fab.title = fab.getAttribute('aria-label');
   pendingRefresh = false;
+  // A different page starts at the top; redrawing the same page keeps the scroll position.
+  const page = `${name}/${arg || ''}`;
+  if (view.dataset.page !== page) { view.scrollTop = 0; view.dataset.page = page; }
   view.dataset.view = name;
   setTitle({ notes: 'Notes', settings: 'Settings', projects: 'Projects' }[name] || '', '');
   if (name === 'notes') renderNotes(view, vault, { openId: arg || null });
